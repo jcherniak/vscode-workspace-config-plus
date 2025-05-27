@@ -3,7 +3,14 @@
 const { assert } = require('chai');
 const Sinon = require('sinon');
 
-const { callbacks, globPattern, uris } = require('../data');
+const {
+  callbacks,
+  // Import specific URIs needed
+  vscodeDirUri, cursorDirUri,
+  settingsVscodeFileUri, settingsVscodeSharedUri, settingsVscodeLocalUri,
+  settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri,
+  mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri
+} = require('../data');
 const fileHandler = require('../../src/file-handler');
 const watcher = require('../../src/watcher');
 
@@ -23,10 +30,12 @@ suite('watcher Suite', () => {
   let fourthWatcherDisposeStub;
 
   setup(() => {
-    watcher._fileSystemWatchers = {
-      first: [firstWatcher, secondWatcher],
-      second: [thirdWatcher, fourthWatcher],
-    };
+    // Reset watchers map for each test
+    watcher._fileSystemWatchers = {};
+    // Example watchers for disposal tests
+    watcher._fileSystemWatchers['first'] = [firstWatcher, secondWatcher];
+    watcher._fileSystemWatchers['second'] = [thirdWatcher, fourthWatcher];
+
     firstWatcherDisposeStub = Sinon.stub(firstWatcher, 'dispose');
     secondWatcherDisposeStub = Sinon.stub(secondWatcher, 'dispose');
     thirdWatcherDisposeStub = Sinon.stub(thirdWatcher, 'dispose');
@@ -44,58 +53,83 @@ suite('watcher Suite', () => {
     let registerSharedFileSystemWatcherStub;
     /** @type {Sinon.SinonStub} */
     let mergeFilesStub;
-    // ~ 2021-08-16T20-17-50Z
-    const initialTime = 1629162959014;
+    const initialTime = 1629162959014; // Keep sample time
     const { generateFileSystemWatcher } = watcher;
-    const folderUri = 'my-project/.vscode';
-    const args = {
-      ...callbacks,
-      ...uris,
-      folderUri,
-      globPattern,
+
+    // Define a sample glob pattern object (as created by createRelativePattern)
+    const sampleGlobPattern = { pattern: '{*.local.json,*.shared.json}' };
+    // Use a consistent folderUri (representing the workspace folder root)
+    const workspaceFolderUri = 'my-project';
+
+    // --- Args object for a test case using .cursor and mcp files ---
+    const argsCursorMcp = {
+      ...callbacks, // Include readFile, writeFile, createFileSystemWatcher etc.
+      globPattern: sampleGlobPattern, // The pattern generated for the active dir
+      folderUri: workspaceFolderUri,  // Root workspace folder URI
+      // URIs passed based on active dir (.cursor) and file type (mcp)
+      vscodeFileUri: mcpCursorFileUri, // Target file URI
+      sharedFileUri: mcpCursorSharedUri,
+      localFileUri: mcpCursorLocalUri,
     };
-    let handleFileEvent;
+    let handleFileEvent; // To capture the internal callback
 
     setup(() => {
       clock = Sinon.useFakeTimers();
       clock.tick(initialTime);
+      // Stub the internal registration function
       registerSharedFileSystemWatcherStub = Sinon.stub(
         watcher,
         '_registerSharedFileSystemWatcher'
-      ).callsFake((_g, _c, _f, cb) => {
-        handleFileEvent = cb;
+      ).callsFake((_glob, _createWatcherFn, _folderUri, callbackFn) => {
+        // Capture the event handler callback passed to the internal function
+        handleFileEvent = callbackFn;
       });
-      mergeFilesStub = Sinon.stub(fileHandler, 'mergeConfigFiles');
+      mergeFilesStub = Sinon.stub(fileHandler, 'mergeConfigFiles').resolves();
     });
 
     teardown(() => {
       handleFileEvent = null;
+      clock.restore(); // Restore clock
+    });
+
+    test('Should call mergeConfigFiles on file event', async () => {
+      generateFileSystemWatcher(argsCursorMcp);
+      // Simulate an event for the shared file
+      await handleFileEvent(argsCursorMcp.sharedFileUri);
+      Sinon.assert.calledOnce(mergeFilesStub);
+      Sinon.assert.calledWithMatch(mergeFilesStub, {
+        vscodeFileUri: argsCursorMcp.vscodeFileUri, // Check target URI
+        sharedFileUri: argsCursorMcp.sharedFileUri,
+        localFileUri: argsCursorMcp.localFileUri,
+      });
     });
 
     test('Should not merge twice on duplicate events in rapid succession', async () => {
-      generateFileSystemWatcher(args);
-      await handleFileEvent(uris.sharedFileUri);
-      clock.tick(349);
-      await handleFileEvent(uris.sharedFileUri);
-      assert.isTrue(mergeFilesStub.calledOnce);
+      generateFileSystemWatcher(argsCursorMcp);
+      await handleFileEvent(argsCursorMcp.sharedFileUri);
+      clock.tick(349); // Advance time less than threshold
+      await handleFileEvent(argsCursorMcp.sharedFileUri);
+      Sinon.assert.calledOnce(mergeFilesStub);
     });
 
-    test('Should merge again if same type of events happen outside the cache boundary', async () => {
-      generateFileSystemWatcher(args);
-      await handleFileEvent(uris.sharedFileUri);
-      clock.tick(351);
-      await handleFileEvent(uris.sharedFileUri);
-      assert.isTrue(mergeFilesStub.calledTwice);
+    test('Should merge again if same file event happens outside the cache boundary', async () => {
+      generateFileSystemWatcher(argsCursorMcp);
+      await handleFileEvent(argsCursorMcp.localFileUri);
+      clock.tick(351); // Advance time more than threshold
+      await handleFileEvent(argsCursorMcp.localFileUri);
+      Sinon.assert.calledTwice(mergeFilesStub);
     });
 
-    test('Should register watcher correctly', async () => {
-      generateFileSystemWatcher(args);
-      assert.isTrue(registerSharedFileSystemWatcherStub.calledOnce);
-      const callArgs = registerSharedFileSystemWatcherStub.firstCall.args;
-      // The fourth arg is the inner callback function, which is validated above.
-      assert.deepEqual(callArgs[0], globPattern);
-      assert.deepEqual(callArgs[1], callbacks.createFileSystemWatcher);
-      assert.deepEqual(callArgs[2], folderUri);
+    test('Should call internal register function correctly', () => {
+       generateFileSystemWatcher(argsCursorMcp);
+       Sinon.assert.calledOnce(registerSharedFileSystemWatcherStub);
+       const callArgs = registerSharedFileSystemWatcherStub.firstCall.args;
+
+       // Assert arguments passed to _registerSharedFileSystemWatcher:
+       assert.deepEqual(callArgs[0], argsCursorMcp.globPattern, 'Arg 0: globPattern');
+       assert.strictEqual(callArgs[1], argsCursorMcp.createFileSystemWatcher, 'Arg 1: createFileSystemWatcher function');
+       assert.strictEqual(callArgs[2], argsCursorMcp.folderUri, 'Arg 2: workspace folderUri');
+       assert.isFunction(callArgs[3], 'Arg 3: handleFileEvent callback');
     });
   });
 
@@ -108,47 +142,72 @@ suite('watcher Suite', () => {
     let onDidCreateStub;
     /** @type {Sinon.SinonStub} */
     let onDidDeleteStub;
-    const fileSystemWatcher = {
+
+    const mockWatcherInstance = {
       onDidChange: () => null,
       onDidCreate: () => null,
       onDidDelete: () => null,
     };
-    const vsCodeUri = { uri: 'foo/.vscode' };
-    const pattern = { path: '{a,b}.json' };
-    const handleEvent = (_a, _b, _c, _d = '') => {};
-    const didChange = 'indeed';
-    const didCreate = { foo: 'bar' };
-    const didDelete = false;
+    // Use a representative directory URI from test data
+    const testDirUri = cursorDirUri;
+    const testPattern = { pattern: '{*.local,*.shared}.json' };
+    const handleEventCallback = Sinon.spy(); // Use a spy for the callback
+
+    // Mock disposables returned by event listeners
+    const disposableChange = { dispose: Sinon.spy() };
+    const disposableCreate = { dispose: Sinon.spy() };
+    const disposableDelete = { dispose: Sinon.spy() };
 
     setup(() => {
+      // Stub the actual VS Code API wrapper
       createFileSystemWatcherStub = Sinon.stub(
-        callbacks,
+        callbacks, // Stub the function within the callbacks object
         'createFileSystemWatcher'
       )
-        .withArgs(pattern)
-        .callsFake(() => fileSystemWatcher);
-      onDidChangeStub = Sinon.stub(fileSystemWatcher, 'onDidChange').callsFake(
-        () => didChange
-      );
-      onDidCreateStub = Sinon.stub(fileSystemWatcher, 'onDidCreate').callsFake(
-        () => didCreate
-      );
-      onDidDeleteStub = Sinon.stub(fileSystemWatcher, 'onDidDelete').callsFake(
-        () => didDelete
-      );
+        .withArgs(testPattern) // Expect it to be called with the pattern
+        .returns(mockWatcherInstance); // Return our mock watcher
+
+      // Stub the event listener registration methods
+      onDidChangeStub = Sinon.stub(mockWatcherInstance, 'onDidChange').returns(disposableChange);
+      onDidCreateStub = Sinon.stub(mockWatcherInstance, 'onDidCreate').returns(disposableCreate);
+      onDidDeleteStub = Sinon.stub(mockWatcherInstance, 'onDidDelete').returns(disposableDelete);
+
+      // Reset the callback spy and internal watcher map
+      handleEventCallback.resetHistory();
+      watcher._fileSystemWatchers = {};
     });
 
-    test('Should register the provided uri correctly', () => {
+    test('Should create watcher and subscribe to events', () => {
       watcher._registerSharedFileSystemWatcher(
-        pattern,
+        testPattern,
         callbacks.createFileSystemWatcher,
-        vsCodeUri,
-        handleEvent
+        testDirUri.uri, // Pass the URI string from the test data object
+        handleEventCallback
       );
-      assert.deepEqual(watcher._fileSystemWatchers[vsCodeUri], [
-        didChange,
-        didCreate,
-        didDelete,
+
+      // Verify createFileSystemWatcher was called
+      Sinon.assert.calledOnceWithExactly(createFileSystemWatcherStub, testPattern);
+
+      // Verify event subscriptions
+      Sinon.assert.calledOnceWithExactly(onDidChangeStub, handleEventCallback);
+      Sinon.assert.calledOnceWithExactly(onDidCreateStub, handleEventCallback);
+      Sinon.assert.calledOnceWithExactly(onDidDeleteStub, handleEventCallback);
+    });
+
+    test('Should store disposables under the provided folder URI', () => {
+      watcher._registerSharedFileSystemWatcher(
+        testPattern,
+        callbacks.createFileSystemWatcher,
+        testDirUri.uri, // Pass the URI string
+        handleEventCallback
+      );
+
+      // Check if the disposables are stored correctly in the internal map
+      assert.exists(watcher._fileSystemWatchers[testDirUri.uri]);
+      assert.deepEqual(watcher._fileSystemWatchers[testDirUri.uri], [
+        disposableChange,
+        disposableCreate,
+        disposableDelete,
       ]);
     });
   });

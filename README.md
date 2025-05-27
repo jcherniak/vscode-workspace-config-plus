@@ -25,29 +25,39 @@ Provides additional capabilities to manage your "workspace" configuration settin
 
 ## Current Features
 
-- Adds support for `shared` and `local` configuration files (`.vscode/*.shared.json`, and `.vscode/*.local.json`)
+- Adds support for `shared` and `local` configuration files (e.g., `settings.shared.json`, `settings.local.json`).
+- Looks for configuration files in `.cursor` and `.vscode` directories (prioritizes `.cursor` if present).
 
 ### Shared and Local Configuration Files
 
 With this extension you can now split your project's workspace configuration between shared files that can be checked into version control and shared with other team members, as well as local configuration overrides/extension that are excluded from version control.
 
-It currently supports:
+The extension automatically detects whether to use the `.cursor` or `.vscode` directory for configuration files. If a `.cursor` directory exists in your workspace folder, it will be used; otherwise, the extension falls back to using the `.vscode` directory. This allows compatibility with standard VS Code setups while enabling distinct configurations for Cursor users.
+
+It currently supports merging `*.shared.json` and `*.local.json` files into the corresponding base `.json` file for:
 
 - `settings.json` - (`settings.shared.json`, `settings.local.json`)
 - `tasks.json` - (`tasks.shared.json`, `tasks.local.json`)
 - `launch.json` - (`launch.shared.json`, `launch.local.json`)
+- `mcp.json` - (`mcp.shared.json`, `mcp.local.json`) 
 
 #### Setup
 
-Be sure your `*.local.json` files and the main VS Code files are excluded from version control by adding the corresponding entries to your project's ignore file (e.g. `.gitignore`, `.hgignore`). For example:
+Be sure your `*.local.json` files and the main configuration files (e.g., `settings.json`, `mcp.json`) are excluded from version control by adding the corresponding entries to your project's ignore file (e.g. `.gitignore`, `.hgignore`). For example:
 
 ```
 # .gitignore
+
+# Ignore all files in .vscode and .cursor...
 .vscode/*
+.cursor/*
+
+# ...but DO track the shared files
 !.vscode/*.shared.json
+!.cursor/*.shared.json
 ```
 
-Then just add your desired `*.shared.json` and/or `*.local.json` files to your `.vscode` directory in your workspace folder(s). The extension works with both standard (single root) workspace projects and [multi root workspaces][multi-root-workspace-docs].
+Then just add your desired `*.shared.json` and/or `*.local.json` files to your preferred configuration directory (`.cursor` or `.vscode`) in your workspace folder(s). The extension works with both standard (single root) workspace projects and [multi root workspaces][multi-root-workspace-docs].
 
 Enter the values that you want to share with other contributors into the `*.shared.json` file, and any personal/local overrides and additional settings to the corresponding `*.local.json` file. The configuration values defined in a `*.local.json` file will take precedence over any conflicting values defined in the corresponding `*.shared.json` file.
 
@@ -61,7 +71,7 @@ This extension is not an all-or-nothing proposition. Team members and contributo
 
 > Note that currently Workspace Config+ requires you to specify any of the below settings in your "workspace" files, and it doesn't yet support setting them at the user/machine global level.
 >
-> If you'd like to use these settings to modify the behavior of Workspace Config+ ,then you'll need to add the setting to either `settings.local.json` or `settings.shared.json`
+> If you'd like to use these settings to modify the behavior of Workspace Config+ ,then you'll need to add the setting to either your `*.local.json` or `*.shared.json` file (e.g., `settings.local.json`, `mcp.shared.json`).
 
 ##### `arrayMerge`
 
@@ -141,7 +151,7 @@ However, if you change the value of the setting to `overwrite`, then the overlap
 
 #### Limitations
 
-All configuration setting values are ultimately stored and persisted in the native VS Code workspace configuration files (e.g. `.vscode/settings.json`). However, because these features are added via an extension there are some associated limitations and accordingly we'd strongly advise against manually modifying those native files when using the extension, and instead advise managing your configuration in the shared/local files.
+All configuration setting values are ultimately stored and persisted in the native workspace configuration files (e.g. `.vscode/settings.json`, `.cursor/mcp.json`). However, because these features are added via an extension there are some associated limitations and accordingly we'd strongly advise against manually modifying those native files when using the extension, and instead advise managing your configuration in the shared/local files.
 
 - You can utilize inline comments in the `*.local.json` and `*.shared.json` files, but any comments from those files are not persisted into the native VS Code configuration file.
 - Any comments added to the native VS Code configuration file (e.g. `settings.json`) will be lost when any configuration updates are applied based on changes to the local/shared files.
@@ -161,7 +171,7 @@ All configuration setting values are ultimately stored and persisted in the nati
 
 #### Background
 
-VS Code is highly configurable, and allows you to [configure specific workspaces in addition to your global user settings.]([vscode-settings-docs]). This includes things like general settings, such as the zoom level, as well as [tasks and launch configurations] amongst others. These configurations are stored in various respective files within the `.vscode` directory in the workspace. For example, the workspace task configuration is stored in `.vscode/tasks.json`.
+VS Code is highly configurable, and allows you to [configure specific workspaces in addition to your global user settings.]([vscode-settings-docs]). This includes things like general settings, such as the zoom level, as well as [tasks and launch configurations] amongst others. These configurations are stored in various respective files within the `.vscode` directory (or `.cursor` for Cursor users) in the workspace. For example, the workspace task configuration is stored in `.vscode/tasks.json`.
 
 This works fantastically, but unfortunately often poses a challenging question for teams or projects that have more than one author since they have to determine whether or not to track the configuration file(s) in version control. If they include the files in version control then they'll often run into conflicting opinions or even conflicting settings, such as those from extensions which are specific to the developer's local file system. However, if they exclude the files from version control then they give up the ability to share elements that are helpful for other developers and force contributors to manually duplicate part of their setup.
 

@@ -6,10 +6,50 @@ const Sinon = require('sinon');
 const fileHandler = require('../../src/file-handler');
 const lib = require('../../src/lib');
 const log = require('../../src/log');
-const data = require('../data');
+const {
+  callbacks: dataCallbacks,
+  vscodeDirUri,
+  cursorDirUri,
+  settingsVscodeFileUri, settingsVscodeSharedUri, settingsVscodeLocalUri,
+  launchVscodeFileUri, launchVscodeSharedUri, launchVscodeLocalUri,
+  tasksVscodeFileUri, tasksVscodeSharedUri, tasksVscodeLocalUri,
+  mcpVscodeFileUri, mcpVscodeSharedUri, mcpVscodeLocalUri,
+  settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri,
+  launchCursorFileUri, launchCursorSharedUri, launchCursorLocalUri,
+  tasksCursorFileUri, tasksCursorSharedUri, tasksCursorLocalUri,
+  mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri,
+} = require('../data');
 const watcher = require('../../src/watcher');
 
 suite('lib Suite', () => {
+  let generateFileSystemWatcherStub;
+  let mergeConfigFilesStub;
+  let joinPathStub;
+  let createRelativePatternStub;
+  let statStub;
+  let logInfoStub;
+  let logDebugStub;
+
+  const testFolderUri = 'foo';
+  let callbacks;
+
+  setup(() => {
+    callbacks = { ...dataCallbacks };
+    generateFileSystemWatcherStub = Sinon.stub(watcher, 'generateFileSystemWatcher');
+    mergeConfigFilesStub = Sinon.stub(fileHandler, 'mergeConfigFiles');
+    joinPathStub = Sinon.stub(callbacks, 'joinPath');
+    createRelativePatternStub = Sinon.stub(callbacks, 'createRelativePattern');
+    statStub = Sinon.stub(callbacks, 'stat');
+    logInfoStub = Sinon.stub(log, 'info');
+    logDebugStub = Sinon.stub(log, 'debug');
+
+    statStub.withArgs(cursorDirUri).resolves({ type: 2 });
+    statStub.withArgs(vscodeDirUri).resolves({ type: 2 });
+
+    joinPathStub.withArgs(testFolderUri, '.vscode').returns(vscodeDirUri);
+    joinPathStub.withArgs(testFolderUri, '.cursor').returns(cursorDirUri);
+  });
+
   teardown(() => {
     Sinon.restore();
   });
@@ -31,9 +71,7 @@ suite('lib Suite', () => {
   });
 
   suite('handleWorkspaceFolderUpdates Suite', () => {
-    /** @type {Sinon.SinonStub} */
     let initializeWorkspaceFolderStub;
-    /** @type {Sinon.SinonStub} */
     let disposeWorkspaceWatcherStub;
 
     setup(() => {
@@ -61,12 +99,13 @@ suite('lib Suite', () => {
       const added = [{ uri: 'foo/bar' }, { uri: 'baz/qux' }];
       lib.handleWorkspaceFolderUpdates({
         added,
-        ...data.callbacks,
+        ...callbacks,
       });
-      assert.deepEqual(initializeWorkspaceFolderStub.firstCall.firstArg, {
+      assert.deepInclude(initializeWorkspaceFolderStub.firstCall.firstArg, {
         folderUri: added[0].uri,
-        ...data.callbacks,
+        stat: callbacks.stat,
       });
+      assert.isFunction(initializeWorkspaceFolderStub.firstCall.firstArg.stat);
     });
 
     test('Should handle falsy value for removed folders', () => {
@@ -106,125 +145,135 @@ suite('lib Suite', () => {
   });
 
   suite('initializeWorkspaceFolder Suite', () => {
-    const { callbacks } = data;
     const { createFileSystemWatcher, readFile, writeFile } = callbacks;
-    /** @type {Sinon.SinonStub} */
-    let generateFileSystemWatcherStub;
-    /** @type {Sinon.SinonStub} */
-    let mergeConfigFilesStub;
-    /** @type {Sinon.SinonStub} */
-    let joinPathStub;
-    /** @type {Sinon.SinonStub} */
-    let createRelativePatternStub;
-    const workspaceVscodeDirUri = { uri: 'foo/.vscode' };
-    const folderUri = 'foo';
-    const { pattern } = data;
-    const { vscodeFileUri, localFileUri, sharedFileUri } = data.uris;
 
-    setup(() => {
-      generateFileSystemWatcherStub = Sinon.stub(
-        watcher,
-        'generateFileSystemWatcher'
-      );
-      mergeConfigFilesStub = Sinon.stub(fileHandler, 'mergeConfigFiles');
-      joinPathStub = Sinon.stub(callbacks, 'joinPath');
-      joinPathStub
-        .withArgs(folderUri, '.vscode')
-        .callsFake(() => workspaceVscodeDirUri);
-      createRelativePatternStub = Sinon.stub(
-        callbacks,
-        'createRelativePattern'
-      );
-    });
+    const setupJoinPathForFile = (dirUri, baseName, targetUri, sharedUri, localUri) => {
+      joinPathStub.withArgs(dirUri, `${baseName}.json`).returns(targetUri);
+      joinPathStub.withArgs(dirUri, `${baseName}.shared.json`).returns(sharedUri);
+      joinPathStub.withArgs(dirUri, `${baseName}.local.json`).returns(localUri);
+    };
 
-    const assertGenerateWatcherCall = pattern => {
-      assert.isTrue(
-        generateFileSystemWatcherStub.calledWithExactly({
+    const setupRelativePattern = (dirUri, localName, sharedName, patternResult) => {
+       createRelativePatternStub
+        .withArgs(dirUri, `{${localName},${sharedName}}`)
+        .returns(patternResult);
+    };
+
+    const assertGenerateWatcherCall = (pattern, folderUri, targetUri, sharedUri, localUri) => {
+      Sinon.assert.calledWithMatch(
+        generateFileSystemWatcherStub,
+        {
           globPattern: pattern,
           folderUri,
-          ...data.uris,
-          createFileSystemWatcher,
-          readFile,
-          writeFile,
-        })
+          vscodeFileUri: targetUri,
+          sharedFileUri: sharedUri,
+          localFileUri: localUri,
+          createFileSystemWatcher: Sinon.match.func,
+          readFile: Sinon.match.func,
+          writeFile: Sinon.match.func,
+        }
       );
     };
 
-    const assertMergeFilesCall = () => {
-      assert.isTrue(
-        mergeConfigFilesStub.calledWithExactly({
-          ...data.uris,
-          readFile,
-          writeFile,
-        })
+    const assertMergeFilesCall = (targetUri, sharedUri, localUri) => {
+      Sinon.assert.calledWithMatch(
+        mergeConfigFilesStub,
+        {
+          vscodeFileUri: targetUri,
+          sharedFileUri: sharedUri,
+          localFileUri: localUri,
+          readFile: Sinon.match.func,
+          writeFile: Sinon.match.func,
+        }
       );
     };
 
-    test('Should run for every entry in target config files', () => {
-      const expectedCount = 3;
-      lib.initializeWorkspaceFolder({ folderUri, ...callbacks });
-      assert.deepEqual(generateFileSystemWatcherStub.callCount, expectedCount);
-      assert.deepEqual(mergeConfigFilesStub.callCount, expectedCount);
+    test('Should do nothing if neither .cursor nor .vscode exists', async () => {
+      statStub.withArgs(cursorDirUri).rejects({ code: 'ENOENT' });
+      statStub.withArgs(vscodeDirUri).rejects({ code: 'ENOENT' });
+
+      await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
+
+      Sinon.assert.notCalled(generateFileSystemWatcherStub);
+      Sinon.assert.notCalled(mergeConfigFilesStub);
+      Sinon.assert.calledWith(logInfoStub, Sinon.match(/No configuration directory found/));
     });
 
-    test('Should initialize settings.json correctly', () => {
-      createRelativePatternStub
-        .withArgs(
-          workspaceVscodeDirUri,
-          '{settings.local,settings.shared}.json'
-        )
-        .callsFake(() => pattern);
-      joinPathStub
-        .withArgs(workspaceVscodeDirUri, 'settings.json')
-        .callsFake(() => vscodeFileUri);
-      joinPathStub
-        .withArgs(workspaceVscodeDirUri, 'settings.shared.json')
-        .callsFake(() => sharedFileUri);
-      joinPathStub
-        .withArgs(workspaceVscodeDirUri, 'settings.local.json')
-        .callsFake(() => localFileUri);
+    test('Should use .cursor if both .cursor and .vscode exist', async () => {
+      statStub.withArgs(cursorDirUri).resolves({ type: 2 });
+      setupJoinPathForFile(cursorDirUri, 'settings', settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
+      const pattern = { pattern: 'cursor-settings-pattern' };
+      setupRelativePattern(cursorDirUri, 'settings.local.json', 'settings.shared.json', pattern);
 
-      lib.initializeWorkspaceFolder({ folderUri, ...callbacks });
-      assertGenerateWatcherCall(pattern);
-      assertMergeFilesCall();
+      await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
+
+      const expectedCallCount = 4;
+      assert.deepEqual(generateFileSystemWatcherStub.callCount, expectedCallCount);
+      assert.deepEqual(mergeConfigFilesStub.callCount, expectedCallCount);
+      Sinon.assert.calledWith(logInfoStub, `Using configuration directory: ${cursorDirUri.fsPath}`);
+
+      assertGenerateWatcherCall(pattern, testFolderUri, settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
+      assertMergeFilesCall(settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
     });
 
-    test('Should initialize launch.json correctly', () => {
-      createRelativePatternStub
-        .withArgs(workspaceVscodeDirUri, '{launch.local,launch.shared}.json')
-        .callsFake(() => pattern);
-      joinPathStub
-        .withArgs(workspaceVscodeDirUri, 'launch.json')
-        .callsFake(() => vscodeFileUri);
-      joinPathStub
-        .withArgs(workspaceVscodeDirUri, 'launch.shared.json')
-        .callsFake(() => sharedFileUri);
-      joinPathStub
-        .withArgs(workspaceVscodeDirUri, 'launch.local.json')
-        .callsFake(() => localFileUri);
+    test('Should use .vscode if only .vscode exists', async () => {
+      statStub.withArgs(cursorDirUri).rejects({ code: 'ENOENT' });
+      statStub.withArgs(vscodeDirUri).resolves({ type: 2 });
 
-      lib.initializeWorkspaceFolder({ folderUri, ...callbacks });
-      assertGenerateWatcherCall(pattern);
-      assertMergeFilesCall();
+      setupJoinPathForFile(vscodeDirUri, 'settings', settingsVscodeFileUri, settingsVscodeSharedUri, settingsVscodeLocalUri);
+      const pattern = { pattern: 'vscode-settings-pattern' };
+      setupRelativePattern(vscodeDirUri, 'settings.local.json', 'settings.shared.json', pattern);
+
+      await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
+
+      const expectedCallCount = 4;
+      assert.deepEqual(generateFileSystemWatcherStub.callCount, expectedCallCount);
+      assert.deepEqual(mergeConfigFilesStub.callCount, expectedCallCount);
+      Sinon.assert.calledWith(logInfoStub, `Using configuration directory: ${vscodeDirUri.fsPath}`);
+
+      assertGenerateWatcherCall(pattern, testFolderUri, settingsVscodeFileUri, settingsVscodeSharedUri, settingsVscodeLocalUri);
+      assertMergeFilesCall(settingsVscodeFileUri, settingsVscodeSharedUri, settingsVscodeLocalUri);
     });
 
-    test('Should initialize tasks.json correctly', () => {
-      createRelativePatternStub
-        .withArgs(workspaceVscodeDirUri, '{tasks.local,tasks.shared}.json')
-        .callsFake(() => pattern);
-      joinPathStub
-        .withArgs(workspaceVscodeDirUri, 'tasks.json')
-        .callsFake(() => vscodeFileUri);
-      joinPathStub
-        .withArgs(workspaceVscodeDirUri, 'tasks.shared.json')
-        .callsFake(() => sharedFileUri);
-      joinPathStub
-        .withArgs(workspaceVscodeDirUri, 'tasks.local.json')
-        .callsFake(() => localFileUri);
+    test('Should initialize mcp.json correctly using .cursor (when preferred)', async () => {
+      statStub.withArgs(cursorDirUri).resolves({ type: 2 });
+      setupJoinPathForFile(cursorDirUri, 'mcp', mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri);
+      const pattern = { pattern: 'cursor-mcp-pattern' };
+      setupRelativePattern(cursorDirUri, 'mcp.local.json', 'mcp.shared.json', pattern);
 
-      lib.initializeWorkspaceFolder({ folderUri, ...callbacks });
-      assertGenerateWatcherCall(pattern);
-      assertMergeFilesCall();
+      await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
+
+      assertGenerateWatcherCall(pattern, testFolderUri, mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri);
+      assertMergeFilesCall(mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri);
+      Sinon.assert.calledWith(logInfoStub, `Using configuration directory: ${cursorDirUri.fsPath}`);
+    });
+
+    test('Should initialize mcp.json correctly using .vscode (when .cursor absent)', async () => {
+      statStub.withArgs(cursorDirUri).rejects({ code: 'ENOENT' });
+      statStub.withArgs(vscodeDirUri).resolves({ type: 2 });
+
+      setupJoinPathForFile(vscodeDirUri, 'mcp', mcpVscodeFileUri, mcpVscodeSharedUri, mcpVscodeLocalUri);
+      const pattern = { pattern: 'vscode-mcp-pattern' };
+      setupRelativePattern(vscodeDirUri, 'mcp.local.json', 'mcp.shared.json', pattern);
+
+      await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
+
+      assertGenerateWatcherCall(pattern, testFolderUri, mcpVscodeFileUri, mcpVscodeSharedUri, mcpVscodeLocalUri);
+      assertMergeFilesCall(mcpVscodeFileUri, mcpVscodeSharedUri, mcpVscodeLocalUri);
+      Sinon.assert.calledWith(logInfoStub, `Using configuration directory: ${vscodeDirUri.fsPath}`);
+    });
+
+    test('Should initialize settings.json correctly using .cursor (when preferred)', async () => {
+      statStub.withArgs(cursorDirUri).resolves({ type: 2 });
+      setupJoinPathForFile(cursorDirUri, 'settings', settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
+      const pattern = { pattern: 'cursor-settings-pattern' };
+      setupRelativePattern(cursorDirUri, 'settings.local.json', 'settings.shared.json', pattern);
+
+      await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
+
+      assertGenerateWatcherCall(pattern, testFolderUri, settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
+      assertMergeFilesCall(settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
+      Sinon.assert.calledWith(logInfoStub, `Using configuration directory: ${cursorDirUri.fsPath}`);
     });
   });
 });

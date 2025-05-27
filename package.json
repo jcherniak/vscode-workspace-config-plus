@@ -3,7 +3,7 @@
   "displayName": "Workspace Config+",
   "description": "VS Code extension for improved workspace configuration",
   "main": "src/index.js",
-  "version": "0.2.5",
+  "version": "1.0.0",
   "license": "MIT",
   "preview": true,
   "private": true,
@@ -26,7 +26,9 @@
           "launch.local.json",
           "launch.shared.json",
           "tasks.local.json",
-          "tasks.shared.json"
+          "tasks.shared.json",
+          "mcp.local.json",
+          "mcp.shared.json"
         ]
       }
     ],
@@ -54,6 +56,22 @@
       {
         "fileMatch": "/.vscode/tasks.local.json",
         "url": "vscode://schemas/tasks"
+      },
+      {
+        "fileMatch": "/.vscode/mcp.shared.json",
+        "url": "vscode://schemas/settings/folder"
+      },
+      {
+        "fileMatch": "/.vscode/mcp.local.json",
+        "url": "vscode://schemas/settings/folder"
+      },
+      {
+        "fileMatch": "/.cursor/mcp.shared.json",
+        "url": "vscode://schemas/settings/folder"
+      },
+      {
+        "fileMatch": "/.cursor/mcp.local.json",
+        "url": "vscode://schemas/settings/folder"
       }
     ],
     "configuration": {
