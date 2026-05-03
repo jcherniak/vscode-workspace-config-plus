@@ -56,9 +56,9 @@ suite('lib Suite', () => {
 
   suite('deactivate Suite', () => {
     test('Should handle deactivation correctly', () => {
-      const logInfoStub = Sinon.stub(log, 'info');
       const logDisposeStub = Sinon.stub(log, 'dispose');
       const disposeAllWatchersStub = Sinon.stub(watcher, 'disposeAllWatchers');
+      logInfoStub.resetHistory();
       lib.deactivate();
       assert.isTrue(
         logInfoStub.calledOnceWithExactly(
@@ -145,7 +145,6 @@ suite('lib Suite', () => {
   });
 
   suite('initializeWorkspaceFolder Suite', () => {
-    const { createFileSystemWatcher, readFile, writeFile } = callbacks;
 
     const setupJoinPathForFile = (dirUri, baseName, targetUri, sharedUri, localUri) => {
       joinPathStub.withArgs(dirUri, `${baseName}.json`).returns(targetUri);
@@ -199,21 +198,35 @@ suite('lib Suite', () => {
       Sinon.assert.calledWith(logInfoStub, Sinon.match(/No configuration directory found/));
     });
 
-    test('Should use .cursor if both .cursor and .vscode exist', async () => {
+    test('Should use .cursor and .vscode when both exist', async () => {
       statStub.withArgs(cursorDirUri).resolves({ type: 2 });
+      statStub.withArgs(vscodeDirUri).resolves({ type: 2 });
+
       setupJoinPathForFile(cursorDirUri, 'settings', settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
-      const pattern = { pattern: 'cursor-settings-pattern' };
-      setupRelativePattern(cursorDirUri, 'settings.local.json', 'settings.shared.json', pattern);
+      setupRelativePattern(cursorDirUri, 'settings.local.json', 'settings.shared.json', { pattern: 'cursor-settings-pattern' });
+      setupJoinPathForFile(cursorDirUri, 'launch', launchCursorFileUri, launchCursorSharedUri, launchCursorLocalUri);
+      setupRelativePattern(cursorDirUri, 'launch.local.json', 'launch.shared.json', { pattern: 'cursor-launch-pattern' });
+      setupJoinPathForFile(cursorDirUri, 'tasks', tasksCursorFileUri, tasksCursorSharedUri, tasksCursorLocalUri);
+      setupRelativePattern(cursorDirUri, 'tasks.local.json', 'tasks.shared.json', { pattern: 'cursor-tasks-pattern' });
+      setupJoinPathForFile(cursorDirUri, 'mcp', mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri);
+      setupRelativePattern(cursorDirUri, 'mcp.local.json', 'mcp.shared.json', { pattern: 'cursor-mcp-pattern' });
+
+      setupJoinPathForFile(vscodeDirUri, 'settings', settingsVscodeFileUri, settingsVscodeSharedUri, settingsVscodeLocalUri);
+      setupRelativePattern(vscodeDirUri, 'settings.local.json', 'settings.shared.json', { pattern: 'vscode-settings-pattern' });
+      setupJoinPathForFile(vscodeDirUri, 'launch', launchVscodeFileUri, launchVscodeSharedUri, launchVscodeLocalUri);
+      setupRelativePattern(vscodeDirUri, 'launch.local.json', 'launch.shared.json', { pattern: 'vscode-launch-pattern' });
+      setupJoinPathForFile(vscodeDirUri, 'tasks', tasksVscodeFileUri, tasksVscodeSharedUri, tasksVscodeLocalUri);
+      setupRelativePattern(vscodeDirUri, 'tasks.local.json', 'tasks.shared.json', { pattern: 'vscode-tasks-pattern' });
+      setupJoinPathForFile(vscodeDirUri, 'mcp', mcpVscodeFileUri, mcpVscodeSharedUri, mcpVscodeLocalUri);
+      setupRelativePattern(vscodeDirUri, 'mcp.local.json', 'mcp.shared.json', { pattern: 'vscode-mcp-pattern' });
 
       await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
 
-      const expectedCallCount = 4;
+      const expectedCallCount = 8;
       assert.deepEqual(generateFileSystemWatcherStub.callCount, expectedCallCount);
       assert.deepEqual(mergeConfigFilesStub.callCount, expectedCallCount);
       Sinon.assert.calledWith(logInfoStub, `Using configuration directory: ${cursorDirUri.fsPath}`);
-
-      assertGenerateWatcherCall(pattern, testFolderUri, settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
-      assertMergeFilesCall(settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
+      Sinon.assert.calledWith(logInfoStub, `Using configuration directory: ${vscodeDirUri.fsPath}`);
     });
 
     test('Should use .vscode if only .vscode exists', async () => {

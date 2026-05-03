@@ -91,6 +91,7 @@ const mergeConfigFiles = async ({
 
 module.exports = {
   mergeConfigFiles,
+  getMergedConfigs,
   // Private, only exported for test mocking
   _loadConfigFromFile,
   _arrayMergeKey,

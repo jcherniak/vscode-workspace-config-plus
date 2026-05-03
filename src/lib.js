@@ -3,8 +3,6 @@
 const fileHandler = require('./file-handler');
 const watcher = require('./watcher');
 const log = require('./log');
-const { workspace, Uri } = require('vscode');
-const path = require('path');
 
 const workspaceConfigFileNames = ['launch', 'settings', 'tasks', 'mcp'];
 const configDirPreference = ['.cursor', '.vscode'];
@@ -32,59 +30,60 @@ const initializeWorkspaceFolder = async ({
   writeFile,
   stat,
 }) => {
-  let activeConfigDirName = null;
+  let foundAnyConfigDir = false;
 
   for (const dirName of configDirPreference) {
     const dirUri = joinPath(folderUri, dirName);
-    if (await directoryExists(dirUri, stat)) {
-      activeConfigDirName = dirName;
-      log.info(`Using configuration directory: ${dirUri.fsPath}`);
-      break;
+    if (!(await directoryExists(dirUri, stat))) {
+      continue;
     }
+    foundAnyConfigDir = true;
+    log.info(`Using configuration directory: ${dirUri.fsPath}`);
+
+    const activeConfigDirUri = dirUri;
+
+    workspaceConfigFileNames.forEach(configFileBaseName => {
+      const sharedFileName = `${configFileBaseName}.shared.json`;
+      const localFileName = `${configFileBaseName}.local.json`;
+      const targetFileName = `${configFileBaseName}.json`;
+
+      const targetFileUri = joinPath(activeConfigDirUri, targetFileName);
+      const sharedFileUri = joinPath(activeConfigDirUri, sharedFileName);
+      const localFileUri = joinPath(activeConfigDirUri, localFileName);
+
+      const globPattern = createRelativePattern(
+        activeConfigDirUri,
+        `{${localFileName},${sharedFileName}}`
+      );
+
+      log.debug(
+        `Setting up watcher for pattern: ${(globPattern && globPattern.pattern) || '?'} in ${activeConfigDirUri.fsPath}`
+      );
+      watcher.generateFileSystemWatcher({
+        globPattern,
+        createFileSystemWatcher,
+        readFile,
+        writeFile,
+        folderUri,
+        vscodeFileUri: targetFileUri,
+        sharedFileUri,
+        localFileUri,
+      });
+
+      log.debug(`Performing initial merge check for ${targetFileName} in ${activeConfigDirUri.fsPath}`);
+      fileHandler.mergeConfigFiles({
+        vscodeFileUri: targetFileUri,
+        sharedFileUri,
+        localFileUri,
+        readFile,
+        writeFile,
+      });
+    });
   }
 
-  if (!activeConfigDirName) {
+  if (!foundAnyConfigDir) {
     log.info(`No configuration directory found in ${folderUri.fsPath} (checked: ${configDirPreference.join(', ')})`);
-    return;
   }
-
-  const activeConfigDirUri = joinPath(folderUri, activeConfigDirName);
-
-  workspaceConfigFileNames.forEach(configFileBaseName => {
-    const sharedFileName = `${configFileBaseName}.shared.json`;
-    const localFileName = `${configFileBaseName}.local.json`;
-    const targetFileName = `${configFileBaseName}.json`;
-
-    const targetFileUri = joinPath(activeConfigDirUri, targetFileName);
-    const sharedFileUri = joinPath(activeConfigDirUri, sharedFileName);
-    const localFileUri = joinPath(activeConfigDirUri, localFileName);
-
-    const globPattern = createRelativePattern(
-      activeConfigDirUri,
-      `{${localFileName},${sharedFileName}}`
-    );
-
-    log.debug(`Setting up watcher for pattern: ${globPattern.pattern} in ${activeConfigDirUri.fsPath}`);
-    watcher.generateFileSystemWatcher({
-      globPattern,
-      createFileSystemWatcher,
-      readFile,
-      writeFile,
-      folderUri,
-      vscodeFileUri: targetFileUri,
-      sharedFileUri,
-      localFileUri,
-    });
-
-    log.debug(`Performing initial merge check for ${targetFileName} in ${activeConfigDirUri.fsPath}`);
-    fileHandler.mergeConfigFiles({
-      vscodeFileUri: targetFileUri,
-      sharedFileUri,
-      localFileUri,
-      readFile,
-      writeFile,
-    });
-  });
 };
 
 const handleWorkspaceFolderUpdates = ({

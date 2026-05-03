@@ -144,6 +144,7 @@ suite('watcher Suite', () => {
     let onDidDeleteStub;
 
     const mockWatcherInstance = {
+      dispose: Sinon.spy(),
       onDidChange: () => null,
       onDidCreate: () => null,
       onDidDelete: () => null,
@@ -205,6 +206,7 @@ suite('watcher Suite', () => {
       // Check if the disposables are stored correctly in the internal map
       assert.exists(watcher._fileSystemWatchers[testDirUri.uri]);
       assert.deepEqual(watcher._fileSystemWatchers[testDirUri.uri], [
+        mockWatcherInstance,
         disposableChange,
         disposableCreate,
         disposableDelete,

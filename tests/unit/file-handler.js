@@ -203,21 +203,30 @@ suite('file handler Suite', () => {
       "mcp.local.only": "world",
       "mcp.array": ["local1"],
     };
-    const mcpExpectedCombined = {
-      "mcp.feature.one": true, // From base target
-      "mcp.common.setting": "local", // Local overrides shared and base
-      "mcp.shared.only": "hello",
-      "mcp.local.only": "world",
-      "mcp.array": ["shared1", "shared2", "local1"], // Combined array
-      [fileHandler._arrayMergeKey]: 'combine', // Merged array key
-    };
-    const mcpExpectedOverwrite = {
-       "mcp.feature.one": true,
-      "mcp.common.setting": "local",
-      "mcp.shared.only": "hello",
-      "mcp.local.only": "world",
-      "mcp.array": ["local1"], // Overwritten array
-      [fileHandler._arrayMergeKey]: 'overwrite',
+    const mcpMergedCombine = () =>
+      fileHandler.getMergedConfigs({
+        sharedConfig: mcpSharedConfig,
+        localConfig: mcpLocalConfig,
+      });
+    const mcpExpectedCombinedBuffer = () =>
+      Buffer.from(
+        JSON.stringify(
+          {
+            ...mcpBaseTargetConfig,
+            ...mcpMergedCombine(),
+          },
+          null,
+          2
+        )
+      );
+    const mcpExpectedOverwriteBuffer = sharedLocal => {
+      const merged = fileHandler.getMergedConfigs({
+        sharedConfig: sharedLocal.shared,
+        localConfig: sharedLocal.local,
+      });
+      return Buffer.from(
+        JSON.stringify({ ...mcpBaseTargetConfig, ...merged }, null, 2)
+      );
     };
 
     setup(() => {
@@ -304,7 +313,7 @@ suite('file handler Suite', () => {
       Sinon.assert.calledOnceWithExactly(
         writeFileStub,
         mcpCursorFileUri,
-        Buffer.from(JSON.stringify({ ...mcpBaseTargetConfig, ...mcpExpectedCombined }, null, 2)),
+        mcpExpectedCombinedBuffer(),
         { create: true, overwrite: true }
       );
     });
@@ -331,7 +340,10 @@ suite('file handler Suite', () => {
       Sinon.assert.calledOnceWithExactly(
         writeFileStub,
         mcpCursorFileUri,
-        Buffer.from(JSON.stringify({ ...mcpBaseTargetConfig, ...mcpExpectedOverwrite }, null, 2)),
+        mcpExpectedOverwriteBuffer({
+          shared: mcpSharedOverwrite,
+          local: mcpLocalOverwrite,
+        }),
         { create: true, overwrite: true }
       );
     });

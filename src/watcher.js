@@ -11,7 +11,10 @@ const _registerSharedFileSystemWatcher = (
   onFileSystemEventHandler
 ) => {
   const fileSystemChangeWatcher = createFileSystemWatcher(globPattern);
+  const prior = module.exports._fileSystemWatchers[workspaceUri] || [];
   module.exports._fileSystemWatchers[workspaceUri] = [
+    ...prior,
+    fileSystemChangeWatcher,
     fileSystemChangeWatcher.onDidChange(onFileSystemEventHandler),
     fileSystemChangeWatcher.onDidCreate(onFileSystemEventHandler),
     fileSystemChangeWatcher.onDidDelete(onFileSystemEventHandler),

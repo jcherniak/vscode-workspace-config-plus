@@ -6,7 +6,7 @@ const joinPath = (_d, _e, _f) => {};
 const readFile = (_g, _h, _i, _j) => {};
 const writeFile = () => {};
 // Basic stat mock - can be overridden in tests
-const stat = async (uri) => {
+const stat = async _uri => {
   // Default behavior: assume file/dir exists unless specifically told otherwise in tests
   // console.log(`Mock stat called for: ${uri.fsPath || uri}`); // For debugging tests
   return { type: 1 }; // Return a basic object indicating existence

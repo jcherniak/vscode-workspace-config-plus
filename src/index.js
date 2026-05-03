@@ -26,6 +26,7 @@ const readFile = fileUri =>
     .catch(_ => {});
 const writeFile = (fileUri, contents, options) =>
   workspace.fs.writeFile(fileUri, contents, options);
+const stat = fileUri => workspace.fs.stat(fileUri);
 
 const activate = () => {
   if (!workspace.workspaceFolders) {
@@ -40,6 +41,7 @@ const activate = () => {
       joinPath,
       readFile,
       writeFile,
+      stat,
     })
   );
   workspace.onDidChangeWorkspaceFolders(({ added, removed }) =>
@@ -51,6 +53,7 @@ const activate = () => {
       joinPath,
       readFile,
       writeFile,
+      stat,
     })
   );
 };
