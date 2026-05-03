@@ -7,6 +7,7 @@ const Sinon = require('sinon');
 const {
   callbacks,
   // Import necessary URIs from data
+  vscodeDirUri,
   settingsVscodeFileUri, settingsVscodeSharedUri, settingsVscodeLocalUri,
   mcpVscodeFileUri, mcpVscodeSharedUri, mcpVscodeLocalUri,
   mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri
@@ -399,6 +400,104 @@ suite('file handler Suite', () => {
         mcpCursorFileUri,
         Buffer.from(JSON.stringify(expectedMerged, null, 2)),
         { create: true, overwrite: true }
+      );
+    });
+
+    test('Generators: merges in priority order after shared/local', async () => {
+      const discoveryLib = require('../../src/generator-discovery');
+      loadConfigFromFileStub
+        .withArgs(defaultSharedFileUri, callbacks.readFile)
+        .resolves({ layer: 'shared' });
+      loadConfigFromFileStub
+        .withArgs(defaultLocalFileUri, callbacks.readFile)
+        .resolves({ layer: 'local', bump: 1 });
+      loadTargetFileStub.resolves({});
+
+      const readDirectoryStub = Sinon.stub().resolves([
+        ['settings.generator.z.10.js', discoveryLib.VSCODE_FILETYPE_FILE],
+        ['settings.generator.a.2.js', discoveryLib.VSCODE_FILETYPE_FILE],
+      ]);
+
+      const pathA = { fsPath: 'foo/.vscode/settings.generator.a.2.js' };
+      const pathZ = { fsPath: 'foo/.vscode/settings.generator.z.10.js' };
+      const joinPathStub = Sinon.stub(callbacks, 'joinPath');
+      joinPathStub.withArgs(vscodeDirUri, 'settings.generator.a.2.js').returns(pathA);
+      joinPathStub.withArgs(vscodeDirUri, 'settings.generator.z.10.js').returns(pathZ);
+
+      const runStub = Sinon.stub();
+      runStub.onCall(0).resolves(JSON.stringify({ gen: 'first', bump: 2 }));
+      runStub.onCall(1).resolves(JSON.stringify({ gen: 'second', bump: 3 }));
+
+      await mergeConfigFiles({
+        ...callbacks,
+        vscodeFileUri: defaultTargetFileUri,
+        sharedFileUri: defaultSharedFileUri,
+        localFileUri: defaultLocalFileUri,
+        workspaceFolderUri: { fsPath: 'foo' },
+        configDirUri: vscodeDirUri,
+        configFileBaseName: 'settings',
+        readDirectory: readDirectoryStub,
+        joinPath: joinPathStub,
+        runGeneratorScript: runStub,
+      });
+
+      Sinon.assert.calledTwice(runStub);
+      assert.strictEqual(runStub.firstCall.args[0], pathA.fsPath);
+
+      let expected = fileHandler.getMergedConfigs({
+        sharedConfig: { layer: 'shared' },
+        localConfig: { layer: 'local', bump: 1 },
+      });
+      expected = fileHandler.getMergedConfigs({
+        sharedConfig: expected,
+        localConfig: { gen: 'first', bump: 2 },
+      });
+      expected = fileHandler.getMergedConfigs({
+        sharedConfig: expected,
+        localConfig: { gen: 'second', bump: 3 },
+      });
+
+      Sinon.assert.calledWith(
+        writeFileStub,
+        defaultTargetFileUri,
+        Buffer.from(JSON.stringify({ ...{}, ...expected }, null, 2)),
+        { create: true, overwrite: true },
+      );
+    });
+
+    test('Generators: scripts only (no shared/local) still merges', async () => {
+      const discoveryLib = require('../../src/generator-discovery');
+      loadConfigFromFileStub.withArgs(defaultSharedFileUri, callbacks.readFile).resolves(undefined);
+      loadConfigFromFileStub.withArgs(defaultLocalFileUri, callbacks.readFile).resolves(undefined);
+      loadTargetFileStub.resolves({});
+
+      const readDirectoryStub = Sinon.stub().resolves([
+        ['settings.generator.once.1.js', discoveryLib.VSCODE_FILETYPE_FILE],
+      ]);
+      const pathOne = { fsPath: 'foo/.vscode/settings.generator.once.1.js' };
+      const joinPathStub = Sinon.stub(callbacks, 'joinPath');
+      joinPathStub.withArgs(vscodeDirUri, 'settings.generator.once.1.js').returns(pathOne);
+      const runStub = Sinon.stub().resolves(JSON.stringify({ hello: true }));
+
+      await mergeConfigFiles({
+        ...callbacks,
+        vscodeFileUri: defaultTargetFileUri,
+        sharedFileUri: defaultSharedFileUri,
+        localFileUri: defaultLocalFileUri,
+        workspaceFolderUri: { fsPath: 'foo' },
+        configDirUri: vscodeDirUri,
+        configFileBaseName: 'settings',
+        readDirectory: readDirectoryStub,
+        joinPath: joinPathStub,
+        runGeneratorScript: runStub,
+      });
+
+      Sinon.assert.calledOnce(runStub);
+      Sinon.assert.calledWith(
+        writeFileStub,
+        defaultTargetFileUri,
+        Buffer.from(JSON.stringify({ hello: true }, null, 2)),
+        { create: true, overwrite: true },
       );
     });
 

@@ -5,6 +5,8 @@ const createRelativePattern = _c => {};
 const joinPath = (_d, _e, _f) => {};
 const readFile = (_g, _h, _i, _j) => {};
 const writeFile = () => {};
+/** @returns {Promise<[string, number][]>} */
+const readDirectory = async _dirUri => [];
 // Basic stat mock - can be overridden in tests
 const stat = async _uri => {
   // Default behavior: assume file/dir exists unless specifically told otherwise in tests
@@ -19,6 +21,7 @@ const callbacks = {
   readFile,
   writeFile,
   stat, // Added mock stat
+  readDirectory,
 };
 
 // --- .vscode URIs ---
@@ -68,7 +71,8 @@ const uris = {
 };
 
 const globPattern = {
-  path: 'foo/.vscode/{settings.local,settings.shared}.json',
+  path:
+    'foo/.vscode/{settings.local.json,settings.shared.json,settings.generator.*.*.js}',
 };
 
 module.exports = {

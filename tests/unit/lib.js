@@ -104,6 +104,7 @@ suite('lib Suite', () => {
       assert.deepInclude(initializeWorkspaceFolderStub.firstCall.firstArg, {
         folderUri: added[0].uri,
         stat: callbacks.stat,
+        readDirectory: callbacks.readDirectory,
       });
       assert.isFunction(initializeWorkspaceFolderStub.firstCall.firstArg.stat);
     });
@@ -152,38 +153,67 @@ suite('lib Suite', () => {
       joinPathStub.withArgs(dirUri, `${baseName}.local.json`).returns(localUri);
     };
 
-    const setupRelativePattern = (dirUri, localName, sharedName, patternResult) => {
-       createRelativePatternStub
-        .withArgs(dirUri, `{${localName},${sharedName}}`)
+    const setupRelativePattern = (dirUri, baseName, patternResult) => {
+      createRelativePatternStub
+        .withArgs(dirUri, `{${baseName}.local.json,${baseName}.shared.json,${baseName}.generator.*.*.js}`)
         .returns(patternResult);
     };
 
-    const assertGenerateWatcherCall = (pattern, folderUri, targetUri, sharedUri, localUri) => {
+    const assertGenerateWatcherCall = (
+      pattern,
+      folderUri,
+      configDirUri,
+      configBaseName,
+      targetUri,
+      sharedUri,
+      localUri,
+    ) => {
       Sinon.assert.calledWithMatch(
         generateFileSystemWatcherStub,
         {
           globPattern: pattern,
-          folderUri,
-          vscodeFileUri: targetUri,
-          sharedFileUri: sharedUri,
-          localFileUri: localUri,
+          mergeArgs: Sinon.match(
+            m =>
+              m.folderUri === folderUri &&
+              m.vscodeFileUri === targetUri &&
+              m.sharedFileUri === sharedUri &&
+              m.localFileUri === localUri &&
+              m.workspaceFolderUri === folderUri &&
+              m.configDirUri === configDirUri &&
+              m.configFileBaseName === configBaseName &&
+              typeof m.readFile === 'function' &&
+              typeof m.writeFile === 'function' &&
+              typeof m.joinPath === 'function' &&
+              typeof m.readDirectory === 'function',
+          ),
           createFileSystemWatcher: Sinon.match.func,
-          readFile: Sinon.match.func,
-          writeFile: Sinon.match.func,
         }
       );
     };
 
-    const assertMergeFilesCall = (targetUri, sharedUri, localUri) => {
+    const assertMergeFilesCall = (
+      targetUri,
+      sharedUri,
+      localUri,
+      configDirUri,
+      configBaseName,
+    ) => {
       Sinon.assert.calledWithMatch(
         mergeConfigFilesStub,
-        {
-          vscodeFileUri: targetUri,
-          sharedFileUri: sharedUri,
-          localFileUri: localUri,
-          readFile: Sinon.match.func,
-          writeFile: Sinon.match.func,
-        }
+        Sinon.match(
+          m =>
+            m.folderUri === testFolderUri &&
+            m.vscodeFileUri === targetUri &&
+            m.sharedFileUri === sharedUri &&
+            m.localFileUri === localUri &&
+            m.workspaceFolderUri === testFolderUri &&
+            m.configDirUri === configDirUri &&
+            m.configFileBaseName === configBaseName &&
+            typeof m.readFile === 'function' &&
+            typeof m.writeFile === 'function' &&
+            typeof m.joinPath === 'function' &&
+            typeof m.readDirectory === 'function',
+        ),
       );
     };
 
@@ -203,22 +233,22 @@ suite('lib Suite', () => {
       statStub.withArgs(vscodeDirUri).resolves({ type: 2 });
 
       setupJoinPathForFile(cursorDirUri, 'settings', settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
-      setupRelativePattern(cursorDirUri, 'settings.local.json', 'settings.shared.json', { pattern: 'cursor-settings-pattern' });
+      setupRelativePattern(cursorDirUri, 'settings', { pattern: 'cursor-settings-pattern' });
       setupJoinPathForFile(cursorDirUri, 'launch', launchCursorFileUri, launchCursorSharedUri, launchCursorLocalUri);
-      setupRelativePattern(cursorDirUri, 'launch.local.json', 'launch.shared.json', { pattern: 'cursor-launch-pattern' });
+      setupRelativePattern(cursorDirUri, 'launch', { pattern: 'cursor-launch-pattern' });
       setupJoinPathForFile(cursorDirUri, 'tasks', tasksCursorFileUri, tasksCursorSharedUri, tasksCursorLocalUri);
-      setupRelativePattern(cursorDirUri, 'tasks.local.json', 'tasks.shared.json', { pattern: 'cursor-tasks-pattern' });
+      setupRelativePattern(cursorDirUri, 'tasks', { pattern: 'cursor-tasks-pattern' });
       setupJoinPathForFile(cursorDirUri, 'mcp', mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri);
-      setupRelativePattern(cursorDirUri, 'mcp.local.json', 'mcp.shared.json', { pattern: 'cursor-mcp-pattern' });
+      setupRelativePattern(cursorDirUri, 'mcp', { pattern: 'cursor-mcp-pattern' });
 
       setupJoinPathForFile(vscodeDirUri, 'settings', settingsVscodeFileUri, settingsVscodeSharedUri, settingsVscodeLocalUri);
-      setupRelativePattern(vscodeDirUri, 'settings.local.json', 'settings.shared.json', { pattern: 'vscode-settings-pattern' });
+      setupRelativePattern(vscodeDirUri, 'settings', { pattern: 'vscode-settings-pattern' });
       setupJoinPathForFile(vscodeDirUri, 'launch', launchVscodeFileUri, launchVscodeSharedUri, launchVscodeLocalUri);
-      setupRelativePattern(vscodeDirUri, 'launch.local.json', 'launch.shared.json', { pattern: 'vscode-launch-pattern' });
+      setupRelativePattern(vscodeDirUri, 'launch', { pattern: 'vscode-launch-pattern' });
       setupJoinPathForFile(vscodeDirUri, 'tasks', tasksVscodeFileUri, tasksVscodeSharedUri, tasksVscodeLocalUri);
-      setupRelativePattern(vscodeDirUri, 'tasks.local.json', 'tasks.shared.json', { pattern: 'vscode-tasks-pattern' });
+      setupRelativePattern(vscodeDirUri, 'tasks', { pattern: 'vscode-tasks-pattern' });
       setupJoinPathForFile(vscodeDirUri, 'mcp', mcpVscodeFileUri, mcpVscodeSharedUri, mcpVscodeLocalUri);
-      setupRelativePattern(vscodeDirUri, 'mcp.local.json', 'mcp.shared.json', { pattern: 'vscode-mcp-pattern' });
+      setupRelativePattern(vscodeDirUri, 'mcp', { pattern: 'vscode-mcp-pattern' });
 
       await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
 
@@ -235,7 +265,7 @@ suite('lib Suite', () => {
 
       setupJoinPathForFile(vscodeDirUri, 'settings', settingsVscodeFileUri, settingsVscodeSharedUri, settingsVscodeLocalUri);
       const pattern = { pattern: 'vscode-settings-pattern' };
-      setupRelativePattern(vscodeDirUri, 'settings.local.json', 'settings.shared.json', pattern);
+      setupRelativePattern(vscodeDirUri, 'settings', pattern);
 
       await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
 
@@ -244,20 +274,20 @@ suite('lib Suite', () => {
       assert.deepEqual(mergeConfigFilesStub.callCount, expectedCallCount);
       Sinon.assert.calledWith(logInfoStub, `Using configuration directory: ${vscodeDirUri.fsPath}`);
 
-      assertGenerateWatcherCall(pattern, testFolderUri, settingsVscodeFileUri, settingsVscodeSharedUri, settingsVscodeLocalUri);
-      assertMergeFilesCall(settingsVscodeFileUri, settingsVscodeSharedUri, settingsVscodeLocalUri);
+      assertGenerateWatcherCall(pattern, testFolderUri, vscodeDirUri, 'settings', settingsVscodeFileUri, settingsVscodeSharedUri, settingsVscodeLocalUri);
+      assertMergeFilesCall(settingsVscodeFileUri, settingsVscodeSharedUri, settingsVscodeLocalUri, vscodeDirUri, 'settings');
     });
 
     test('Should initialize mcp.json correctly using .cursor (when preferred)', async () => {
       statStub.withArgs(cursorDirUri).resolves({ type: 2 });
       setupJoinPathForFile(cursorDirUri, 'mcp', mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri);
       const pattern = { pattern: 'cursor-mcp-pattern' };
-      setupRelativePattern(cursorDirUri, 'mcp.local.json', 'mcp.shared.json', pattern);
+      setupRelativePattern(cursorDirUri, 'mcp', pattern);
 
       await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
 
-      assertGenerateWatcherCall(pattern, testFolderUri, mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri);
-      assertMergeFilesCall(mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri);
+      assertGenerateWatcherCall(pattern, testFolderUri, cursorDirUri, 'mcp', mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri);
+      assertMergeFilesCall(mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri, cursorDirUri, 'mcp');
       Sinon.assert.calledWith(logInfoStub, `Using configuration directory: ${cursorDirUri.fsPath}`);
     });
 
@@ -267,12 +297,12 @@ suite('lib Suite', () => {
 
       setupJoinPathForFile(vscodeDirUri, 'mcp', mcpVscodeFileUri, mcpVscodeSharedUri, mcpVscodeLocalUri);
       const pattern = { pattern: 'vscode-mcp-pattern' };
-      setupRelativePattern(vscodeDirUri, 'mcp.local.json', 'mcp.shared.json', pattern);
+      setupRelativePattern(vscodeDirUri, 'mcp', pattern);
 
       await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
 
-      assertGenerateWatcherCall(pattern, testFolderUri, mcpVscodeFileUri, mcpVscodeSharedUri, mcpVscodeLocalUri);
-      assertMergeFilesCall(mcpVscodeFileUri, mcpVscodeSharedUri, mcpVscodeLocalUri);
+      assertGenerateWatcherCall(pattern, testFolderUri, vscodeDirUri, 'mcp', mcpVscodeFileUri, mcpVscodeSharedUri, mcpVscodeLocalUri);
+      assertMergeFilesCall(mcpVscodeFileUri, mcpVscodeSharedUri, mcpVscodeLocalUri, vscodeDirUri, 'mcp');
       Sinon.assert.calledWith(logInfoStub, `Using configuration directory: ${vscodeDirUri.fsPath}`);
     });
 
@@ -280,12 +310,12 @@ suite('lib Suite', () => {
       statStub.withArgs(cursorDirUri).resolves({ type: 2 });
       setupJoinPathForFile(cursorDirUri, 'settings', settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
       const pattern = { pattern: 'cursor-settings-pattern' };
-      setupRelativePattern(cursorDirUri, 'settings.local.json', 'settings.shared.json', pattern);
+      setupRelativePattern(cursorDirUri, 'settings', pattern);
 
       await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
 
-      assertGenerateWatcherCall(pattern, testFolderUri, settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
-      assertMergeFilesCall(settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
+      assertGenerateWatcherCall(pattern, testFolderUri, cursorDirUri, 'settings', settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
+      assertMergeFilesCall(settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri, cursorDirUri, 'settings');
       Sinon.assert.calledWith(logInfoStub, `Using configuration directory: ${cursorDirUri.fsPath}`);
     });
   });

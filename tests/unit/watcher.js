@@ -62,14 +62,23 @@ suite('watcher Suite', () => {
     const workspaceFolderUri = 'my-project';
 
     // --- Args object for a test case using .cursor and mcp files ---
-    const argsCursorMcp = {
-      ...callbacks, // Include readFile, writeFile, createFileSystemWatcher etc.
-      globPattern: sampleGlobPattern, // The pattern generated for the active dir
-      folderUri: workspaceFolderUri,  // Root workspace folder URI
-      // URIs passed based on active dir (.cursor) and file type (mcp)
-      vscodeFileUri: mcpCursorFileUri, // Target file URI
+    const mergeArgsCursorMcp = {
+      folderUri: workspaceFolderUri,
+      vscodeFileUri: mcpCursorFileUri,
       sharedFileUri: mcpCursorSharedUri,
       localFileUri: mcpCursorLocalUri,
+      readFile: callbacks.readFile,
+      writeFile: callbacks.writeFile,
+      joinPath: callbacks.joinPath,
+      workspaceFolderUri,
+      configDirUri: cursorDirUri,
+      configFileBaseName: 'mcp',
+      readDirectory: callbacks.readDirectory,
+    };
+    const argsCursorMcp = {
+      globPattern: sampleGlobPattern,
+      mergeArgs: mergeArgsCursorMcp,
+      createFileSystemWatcher: callbacks.createFileSystemWatcher,
     };
     let handleFileEvent; // To capture the internal callback
 
@@ -95,28 +104,24 @@ suite('watcher Suite', () => {
     test('Should call mergeConfigFiles on file event', async () => {
       generateFileSystemWatcher(argsCursorMcp);
       // Simulate an event for the shared file
-      await handleFileEvent(argsCursorMcp.sharedFileUri);
+      await handleFileEvent(mergeArgsCursorMcp.sharedFileUri);
       Sinon.assert.calledOnce(mergeFilesStub);
-      Sinon.assert.calledWithMatch(mergeFilesStub, {
-        vscodeFileUri: argsCursorMcp.vscodeFileUri, // Check target URI
-        sharedFileUri: argsCursorMcp.sharedFileUri,
-        localFileUri: argsCursorMcp.localFileUri,
-      });
+      Sinon.assert.calledOnceWithExactly(mergeFilesStub, mergeArgsCursorMcp);
     });
 
     test('Should not merge twice on duplicate events in rapid succession', async () => {
       generateFileSystemWatcher(argsCursorMcp);
-      await handleFileEvent(argsCursorMcp.sharedFileUri);
+      await handleFileEvent(mergeArgsCursorMcp.sharedFileUri);
       clock.tick(349); // Advance time less than threshold
-      await handleFileEvent(argsCursorMcp.sharedFileUri);
+      await handleFileEvent(mergeArgsCursorMcp.sharedFileUri);
       Sinon.assert.calledOnce(mergeFilesStub);
     });
 
     test('Should merge again if same file event happens outside the cache boundary', async () => {
       generateFileSystemWatcher(argsCursorMcp);
-      await handleFileEvent(argsCursorMcp.localFileUri);
+      await handleFileEvent(mergeArgsCursorMcp.localFileUri);
       clock.tick(351); // Advance time more than threshold
-      await handleFileEvent(argsCursorMcp.localFileUri);
+      await handleFileEvent(mergeArgsCursorMcp.localFileUri);
       Sinon.assert.calledTwice(mergeFilesStub);
     });
 
@@ -128,7 +133,7 @@ suite('watcher Suite', () => {
        // Assert arguments passed to _registerSharedFileSystemWatcher:
        assert.deepEqual(callArgs[0], argsCursorMcp.globPattern, 'Arg 0: globPattern');
        assert.strictEqual(callArgs[1], argsCursorMcp.createFileSystemWatcher, 'Arg 1: createFileSystemWatcher function');
-       assert.strictEqual(callArgs[2], argsCursorMcp.folderUri, 'Arg 2: workspace folderUri');
+       assert.strictEqual(callArgs[2], mergeArgsCursorMcp.folderUri, 'Arg 2: workspace folderUri');
        assert.isFunction(callArgs[3], 'Arg 3: handleFileEvent callback');
     });
   });

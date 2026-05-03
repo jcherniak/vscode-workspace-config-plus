@@ -21,6 +21,9 @@ async function directoryExists(dirUri, statFn) {
   }
 }
 
+const generatorGlobFragment = base =>
+  `{${base}.local.json,${base}.shared.json,${base}.generator.*.*.js}`;
+
 const initializeWorkspaceFolder = async ({
   folderUri,
   createFileSystemWatcher,
@@ -29,6 +32,7 @@ const initializeWorkspaceFolder = async ({
   readFile,
   writeFile,
   stat,
+  readDirectory,
 }) => {
   let foundAnyConfigDir = false;
 
@@ -53,31 +57,35 @@ const initializeWorkspaceFolder = async ({
 
       const globPattern = createRelativePattern(
         activeConfigDirUri,
-        `{${localFileName},${sharedFileName}}`
+        generatorGlobFragment(configFileBaseName)
       );
 
       log.debug(
         `Setting up watcher for pattern: ${(globPattern && globPattern.pattern) || '?'} in ${activeConfigDirUri.fsPath}`
       );
-      watcher.generateFileSystemWatcher({
-        globPattern,
-        createFileSystemWatcher,
-        readFile,
-        writeFile,
+
+      const mergeArgs = {
         folderUri,
         vscodeFileUri: targetFileUri,
         sharedFileUri,
         localFileUri,
+        readFile,
+        writeFile,
+        joinPath,
+        workspaceFolderUri: folderUri,
+        configDirUri: activeConfigDirUri,
+        configFileBaseName,
+        readDirectory,
+      };
+
+      watcher.generateFileSystemWatcher({
+        globPattern,
+        createFileSystemWatcher,
+        mergeArgs,
       });
 
       log.debug(`Performing initial merge check for ${targetFileName} in ${activeConfigDirUri.fsPath}`);
-      fileHandler.mergeConfigFiles({
-        vscodeFileUri: targetFileUri,
-        sharedFileUri,
-        localFileUri,
-        readFile,
-        writeFile,
-      });
+      fileHandler.mergeConfigFiles(mergeArgs);
     });
   }
 
@@ -95,6 +103,7 @@ const handleWorkspaceFolderUpdates = ({
   readFile,
   writeFile,
   stat,
+  readDirectory,
 }) => {
   if (added && Array.isArray(added)) {
     added.forEach(f =>
@@ -106,6 +115,7 @@ const handleWorkspaceFolderUpdates = ({
         readFile,
         writeFile,
         stat,
+        readDirectory,
       })
     );
   }

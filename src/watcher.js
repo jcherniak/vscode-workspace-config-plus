@@ -24,12 +24,7 @@ const _registerSharedFileSystemWatcher = (
 const generateFileSystemWatcher = ({
   globPattern,
   createFileSystemWatcher,
-  readFile,
-  writeFile,
-  folderUri,
-  vscodeFileUri,
-  sharedFileUri,
-  localFileUri,
+  mergeArgs,
 }) => {
   const cache = {};
   async function handleFileEvent(e) {
@@ -42,20 +37,14 @@ const generateFileSystemWatcher = ({
     // based on observed deltas between the events typically being ~250ms but
     // occasionally coming in around ~325ms.
     if (!entry || current - entry.prior > 350) {
-      await fileHandler.mergeConfigFiles({
-        vscodeFileUri,
-        sharedFileUri,
-        localFileUri,
-        readFile,
-        writeFile,
-      });
+      await fileHandler.mergeConfigFiles(mergeArgs);
     }
     cache[e] = { prior: current };
   }
   module.exports._registerSharedFileSystemWatcher(
     globPattern,
     createFileSystemWatcher,
-    folderUri,
+    mergeArgs.folderUri,
     handleFileEvent
   );
 };
@@ -76,7 +65,7 @@ module.exports = {
   disposeAllWatchers,
   disposeWorkspaceWatcher,
   generateFileSystemWatcher,
-  // Private, only export for test stubbing
+  // Private, only exported for test stubbing
   _fileSystemWatchers,
   _registerSharedFileSystemWatcher,
 };
