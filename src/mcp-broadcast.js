@@ -261,20 +261,90 @@ const _resolveTargetUris = (workspaceFolderUri, joinPath) => {
   };
 };
 
-const _enabledTargets = (cfgValue, dirsExist, targetFilter) => {
-  const enabled = Array.isArray(cfgValue)
-    ? cfgValue
+// _enabledTargets composes three filters that all must pass for a target to
+// receive a broadcast write:
+//
+//   1. wcpConfigAgents: explicit opt-in list from .mcp/wcp-config.json. When
+//      absent (first-run pre-bootstrap), this is null and we fall back to
+//      "every detected target".
+//   2. settingsCfgValue: workspaceConfigPlus.mcp.broadcast.targets (user
+//      setting). Lets a user further narrow per-workspace without editing
+//      wcp-config.json.
+//   3. targetFilter: --target X from the CLI / hook. Hot-path scoping to a
+//      single agent's output.
+//
+// dirsExist scopes the result to artifacts actually present in the workspace
+// (a target listed in wcp-config.json but with no marker dir/file is silently
+// skipped — the user is opting in to writing that file even if the agent
+// hasn't been used in this workspace yet, which is fine and writes anyway).
+const _enabledTargets = (settingsCfgValue, dirsExist, targetFilter, wcpConfigAgents) => {
+  // Start with the wcp-config.json opt-in list when present; otherwise
+  // every supported converter (caller will narrow by dirsExist below).
+  const baseList = Array.isArray(wcpConfigAgents)
+    ? wcpConfigAgents
     : converters.allConverterNames;
-  let list = enabled.filter(name => dirsExist[name]);
-  // Hot-path scoping: when invoked from a hook or wrapper, restrict to a
-  // single named target (e.g. 'claude' from SessionStart, 'codex' from
-  // `wcp wrap codex`). Skips writing the other agents' files entirely.
+  // Settings-level filter (from VSCode workspace settings or env).
+  const settingsList = Array.isArray(settingsCfgValue)
+    ? settingsCfgValue
+    : null;
+  let list = baseList.filter(
+    name => !settingsList || settingsList.includes(name)
+  );
+  // Skip targets whose dir/marker file isn't present.
+  list = list.filter(name => dirsExist[name]);
+  // Hot-path --target scoping.
   if (typeof targetFilter === 'string' && targetFilter.length > 0) {
     list = list.filter(name => name === targetFilter);
   } else if (Array.isArray(targetFilter) && targetFilter.length > 0) {
     list = list.filter(name => targetFilter.includes(name));
   }
   return list;
+};
+
+// eslint-disable-next-line max-statements
+const _readWcpConfig = async (mcpDirUri, joinPath, readFile) => {
+  const wcpConfigUri = joinPath(mcpDirUri, 'wcp-config.json');
+  try {
+    const buf = await readFile(wcpConfigUri);
+    if (!buf) return { uri: wcpConfigUri, config: null };
+    const text = buf.toString();
+    if (!text.trim()) return { uri: wcpConfigUri, config: null };
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.agents)) {
+      return { uri: wcpConfigUri, config: parsed };
+    }
+    return { uri: wcpConfigUri, config: null };
+  } catch (e) {
+    if (e && (e.code === 'ENOENT' || e.code === 'FileNotFound')) {
+      return { uri: wcpConfigUri, config: null };
+    }
+    log.warn(`mcp-broadcast: parsing ${wcpConfigUri.fsPath}: ${e.message}`);
+    log.debug(e);
+    return { uri: wcpConfigUri, config: null };
+  }
+};
+
+// First-run auto-generation: when .mcp/wcp-config.json doesn't exist, write
+// it based on detected artifacts so subsequent runs are stable + the user has
+// a file they can edit to control opt-in.
+const _autogenerateWcpConfig = async ({
+  wcpConfigUri,
+  detectedAgents,
+  writeFile,
+}) => {
+  const body = `${JSON.stringify({ agents: detectedAgents }, null, 2)}\n`;
+  try {
+    await writeFile(wcpConfigUri, Buffer.from(body), {
+      create: true,
+      overwrite: false, // do NOT overwrite an existing file (race-safe)
+    });
+    log.info(
+      `wcp: auto-generated ${wcpConfigUri.fsPath} with detected agents: [${detectedAgents.join(', ')}]. Edit this file to opt agents in or out.`
+    );
+  } catch (e) {
+    log.warn(`wcp: failed to auto-generate ${wcpConfigUri.fsPath}: ${e.message}`);
+    log.debug(e);
+  }
 };
 
 // Accepts an optional `target` arg (string, e.g. 'claude' or 'codex') to scope
@@ -344,7 +414,38 @@ const broadcastMcpToAllAgents = async ({
         // ignore
       }
     }
-    const enabledNames = _enabledTargets(cfgEnabled, dirsExist, target);
+
+    // Read .mcp/wcp-config.json (the explicit per-workspace opt-in file).
+    // Auto-generate it on first run from detected artifacts so users have a
+    // file they can edit to control which agents the broadcast writes to.
+    const { uri: wcpConfigUri, config: wcpConfig } = await _readWcpConfig(
+      mcpDirUri,
+      joinPath,
+      readFile
+    );
+    let wcpConfigAgents = null;
+    if (wcpConfig && Array.isArray(wcpConfig.agents)) {
+      wcpConfigAgents = wcpConfig.agents;
+    } else {
+      // First-run bootstrap: detect agents from artifacts (dirs + detectFiles),
+      // write wcp-config.json, then proceed with the detected list.
+      const detectedAgents = converters.allConverterNames.filter(
+        name => dirsExist[name]
+      );
+      await _autogenerateWcpConfig({
+        wcpConfigUri,
+        detectedAgents,
+        writeFile,
+      });
+      wcpConfigAgents = detectedAgents;
+    }
+
+    const enabledNames = _enabledTargets(
+      cfgEnabled,
+      dirsExist,
+      target,
+      wcpConfigAgents
+    );
     if (enabledNames.length === 0) {
       log.debug('MCP broadcast: no enabled targets present in workspace');
       return;

@@ -233,6 +233,40 @@ suite('mcp-broadcast Suite', () => {
       }, 'cursor');
       assert.deepEqual(enabled, []);
     });
+
+    test('wcpConfigAgents (4th arg) restricts the base list', () => {
+      const enabled = broadcast._enabledTargets(undefined, {
+        cursor: true,
+        claude: true,
+        vscode: true,
+        codex: true,
+        opencode: true,
+      }, undefined, ['claude', 'codex']);
+      assert.deepEqual(enabled, ['claude', 'codex']);
+    });
+
+    test('wcpConfigAgents wins over the default-all-converters fallback', () => {
+      // Even though the implicit default would be all 5, wcpConfigAgents=[] returns nothing.
+      const enabled = broadcast._enabledTargets(undefined, {
+        cursor: true,
+        claude: true,
+        vscode: true,
+        codex: true,
+        opencode: true,
+      }, undefined, []);
+      assert.deepEqual(enabled, []);
+    });
+
+    test('settings + wcpConfigAgents intersect (settings narrow further)', () => {
+      const enabled = broadcast._enabledTargets(['cursor', 'claude'], {
+        cursor: true,
+        claude: true,
+        vscode: true,
+        codex: true,
+      }, undefined, ['claude', 'vscode']);
+      // claude is in both lists; cursor is settings-only; vscode is wcp-only -> only claude.
+      assert.deepEqual(enabled, ['claude']);
+    });
   });
 
   suite('broadcastMcpToAllAgents (precedence)', () => {
@@ -361,6 +395,81 @@ suite('mcp-broadcast Suite', () => {
       // No other targets should have been written under --target claude.
       assert.notExists(writes['/w/.cursor/mcp.json']);
       assert.notExists(writes['/w/.vscode/mcp.json']);
+    });
+
+    test('wcp-config.json opt-in restricts broadcast to listed agents only', async () => {
+      const joinPath = makeJoinPath();
+      const writes = {};
+      const writeFile = (uri, body) => {
+        writes[uri.fsPath] = body.toString();
+        return Promise.resolve();
+      };
+      // All four primary agent dirs present, but wcp-config.json opts into only claude.
+      const stat = () => Promise.resolve({});
+      const readFile = Sinon.stub();
+      readFile.withArgs({ fsPath: '/w/.mcp/wcp-config.json' }).resolves(
+        Buffer.from(JSON.stringify({ agents: ['claude'] }))
+      );
+      readFile.withArgs({ fsPath: '/w/.mcp/team.json' }).resolves(bufFromObj({
+        linear: { type: 'stdio', command: 'npx', args: [], agentInclude: ['*'] },
+      }));
+      readFile.resolves(undefined);
+      const readDirectory = Sinon.stub();
+      readDirectory.withArgs(mcpDirUri).resolves([['team.json', FILE]]);
+      readDirectory.resolves([]);
+
+      await broadcast.broadcastMcpToAllAgents({
+        workspaceFolderUri: wsUri,
+        mcpDirUri,
+        joinPath,
+        readFile,
+        writeFile,
+        readDirectory,
+        stat,
+      });
+
+      // Only Claude's output should be written.
+      assert.exists(writes['/w/.mcp.json']);
+      assert.notExists(writes['/w/.cursor/mcp.json']);
+      assert.notExists(writes['/w/.vscode/mcp.json']);
+      assert.notExists(writes['/w/.codex/config.toml']);
+      assert.notExists(writes['/w/opencode.json']);
+    });
+
+    test('first run auto-generates .mcp/wcp-config.json from detected artifacts', async () => {
+      const joinPath = makeJoinPath();
+      const writes = {};
+      const writeFile = (uri, body) => {
+        writes[uri.fsPath] = body.toString();
+        return Promise.resolve();
+      };
+      // Only .cursor and .claude exist; opencode.json absent.
+      const stat = uri => {
+        if (uri.fsPath === '/w/.cursor' || uri.fsPath === '/w/.claude') {
+          return Promise.resolve({});
+        }
+        return Promise.reject({ code: 'ENOENT' });
+      };
+      const readFile = Sinon.stub();
+      // wcp-config.json doesn't exist (resolves undefined).
+      readFile.resolves(undefined);
+      const readDirectory = Sinon.stub();
+      readDirectory.resolves([]);
+
+      await broadcast.broadcastMcpToAllAgents({
+        workspaceFolderUri: wsUri,
+        mcpDirUri,
+        joinPath,
+        readFile,
+        writeFile,
+        readDirectory,
+        stat,
+      });
+
+      const generated = writes['/w/.mcp/wcp-config.json'];
+      assert.exists(generated, 'expected wcp-config.json to be auto-generated');
+      const parsed = JSON.parse(generated);
+      assert.deepEqual(parsed.agents.sort(), ['claude', 'cursor']);
     });
 
     test('opencode is detected via opencode.json file at workspace root', async () => {

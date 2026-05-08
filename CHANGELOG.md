@@ -2,6 +2,13 @@
 
 ## v1.3.0
 
+- **`.mcp/wcp-config.json` explicit opt-in for broadcast targets**: a new per-workspace file lets you control which agents the broadcast actually writes to, instead of "any agent dir we happen to detect". Schema:
+  ```json
+  { "agents": ["claude", "cursor"] }
+  ```
+  Only listed agents receive a write. Other agents are skipped even if their config dirs/files exist.
+- **First-run auto-generation**: when `.mcp/wcp-config.json` is missing, the broadcast pipeline detects which agent artifacts are present in the workspace (e.g. `.cursor/`, `.claude/`, `opencode.json`) and writes a `wcp-config.json` containing those names. No prompt, no destructive action — the file is created with create-only semantics so existing files are never overwritten. This bootstraps existing users without surprise; you can then edit the generated list to opt agents in or out.
+- **Per-server `agentExclude` still works** as before — wcp-config.json is the *workspace*-level opt-in; per-server filters narrow further. A server with `agentInclude: ["claude"]` only goes to Claude regardless of what wcp-config.json says.
 - **opencode** added as a broadcast target (https://opencode.ai). The converter:
   - Output path: `<root>/opencode.json` (file at workspace root, not a subdir).
   - Schema transform: canonical `command` + `args` are joined into opencode's `command` array; `env` → `environment`; `type: "stdio"` → `"local"`; `type: "http"` / `"sse"` → `"remote"`; `enabled: true` is set by default.

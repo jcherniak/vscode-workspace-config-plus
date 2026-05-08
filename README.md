@@ -220,6 +220,18 @@ Recognized agent names: `cursor`, `claude`, `vscode`, `codex`, plus `copilot` as
 | Codex | `.codex/config.toml` | `[mcp_servers.<name>]` TOML sections (other TOML keys preserved) |
 | [opencode](https://opencode.ai) | `<workspace_root>/opencode.json` | `{ "mcp": { ... } }` with full schema transform (see below); other keys preserved |
 
+#### Per-workspace opt-in: `.mcp/wcp-config.json`
+
+The broadcast only writes to agents listed in `.mcp/wcp-config.json`. Schema:
+
+```json
+{ "agents": ["claude", "cursor", "vscode", "codex", "opencode"] }
+```
+
+If the file is missing on first run, the extension auto-generates one based on which agent artifacts it detects in your workspace (`.cursor/`, `.claude/`, `.codex/`, `opencode.json`, etc.). Edit it afterwards to opt agents in or out — the file is never overwritten once it exists.
+
+Per-server `agentInclude` / `agentExclude` still work and narrow further: a server with `agentInclude: ["claude"]` only ever goes to Claude regardless of what wcp-config.json says.
+
 A target is only written if its config directory or marker file exists in the workspace (e.g. `.cursor/` for Cursor; `.opencode/` *or* `opencode.json` for opencode). Codex's `config.toml` and opencode's `opencode.json` are both **section-merged** — non-MCP keys like Codex's `model` / `approval_policy` and opencode's `tools` / `agent` / `tui` survive untouched.
 
 ##### opencode schema transform
