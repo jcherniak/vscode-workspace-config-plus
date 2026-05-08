@@ -114,14 +114,15 @@
           ]
         },
         "workspaceConfigPlus.mcp.broadcast.targets": {
-          "description": "Which agents to broadcast .mcp/ canonical MCP definitions to. Only effective when .mcp/ exists. Targets whose config dir is not present in the workspace are skipped. Note: 'copilot' (GitHub Copilot in VSCode) shares .vscode/mcp.json with the 'vscode' target.",
+          "description": "Which agents to broadcast .mcp/ canonical MCP definitions to. Only effective when .mcp/ exists. Targets whose config dir/file is not present in the workspace are skipped. Note: 'copilot' (GitHub Copilot in VSCode) shares .vscode/mcp.json with the 'vscode' target.",
           "type": "array",
           "scope": "resource",
           "default": [
             "cursor",
             "claude",
             "vscode",
-            "codex"
+            "codex",
+            "opencode"
           ],
           "items": {
             "type": "string",
@@ -129,7 +130,8 @@
               "cursor",
               "claude",
               "vscode",
-              "codex"
+              "codex",
+              "opencode"
             ]
           },
           "uniqueItems": true

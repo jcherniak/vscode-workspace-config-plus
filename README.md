@@ -218,8 +218,24 @@ Recognized agent names: `cursor`, `claude`, `vscode`, `codex`, plus `copilot` as
 | Claude | `<workspace_root>/.mcp.json` | `{ "mcpServers": { ... } }` |
 | VSCode (& Copilot) | `.vscode/mcp.json` | `{ "servers": { ... } }` |
 | Codex | `.codex/config.toml` | `[mcp_servers.<name>]` TOML sections (other TOML keys preserved) |
+| [opencode](https://opencode.ai) | `<workspace_root>/opencode.json` | `{ "mcp": { ... } }` with full schema transform (see below); other keys preserved |
 
-A target is only written if its config directory exists in the workspace (e.g. `.cursor/` for Cursor). Codex's `config.toml` is **section-merged** — non-MCP keys like `model` and `approval_policy` survive untouched.
+A target is only written if its config directory or marker file exists in the workspace (e.g. `.cursor/` for Cursor; `.opencode/` *or* `opencode.json` for opencode). Codex's `config.toml` and opencode's `opencode.json` are both **section-merged** — non-MCP keys like Codex's `model` / `approval_policy` and opencode's `tools` / `agent` / `tui` survive untouched.
+
+##### opencode schema transform
+
+Opencode's MCP schema differs notably from the standard. The converter remaps each canonical server entry:
+
+| Canonical | opencode | Notes |
+|-----------|----------|-------|
+| `type: "stdio"` | `type: "local"` | Implicit for entries without `type` but with `command`. |
+| `type: "http"` / `"sse"` | `type: "remote"` | |
+| `command` (string) + `args` (array) | `command` (array) | Joined as `[command, ...args]`. |
+| `env` (object) | `environment` (object) | Renamed key. |
+| `url` (string) | `url` (string) | Pass-through for `remote`. |
+| `headers` (object) | `headers` (object) | Pass-through for `remote`. |
+| `timeout` (number) | `timeout` (number) | Pass-through. |
+| (extension default) | `enabled: true` | Always set; users can override per-server in their existing `opencode.json` if needed (re-broadcast preserves only the `mcp` key, so manual overrides under `mcp.<name>.enabled` are *not* preserved — set it on the canonical server's `agentInclude`/`agentExclude` instead). |
 
 You can opt out of any target via the `workspaceConfigPlus.mcp.broadcast.targets` setting (default: all four).
 

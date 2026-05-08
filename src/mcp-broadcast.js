@@ -246,15 +246,18 @@ const _resolveTargetUris = (workspaceFolderUri, joinPath) => {
   const claudeDir = joinPath(workspaceFolderUri, '.claude');
   const vscodeDir = joinPath(workspaceFolderUri, '.vscode');
   const codexDir = joinPath(workspaceFolderUri, '.codex');
+  const opencodeDir = joinPath(workspaceFolderUri, '.opencode');
   return {
     cursorDir,
     claudeDir,
     vscodeDir,
     codexDir,
+    opencodeDir,
     cursorMcpUri: joinPath(cursorDir, 'mcp.json'),
     workspaceMcpUri: joinPath(workspaceFolderUri, '.mcp.json'),
     vscodeMcpUri: joinPath(vscodeDir, 'mcp.json'),
     codexConfigUri: joinPath(codexDir, 'config.toml'),
+    opencodeConfigUri: joinPath(workspaceFolderUri, 'opencode.json'),
   };
 };
 
@@ -296,19 +299,37 @@ const broadcastMcpToAllAgents = async ({
     const ctx = _resolveTargetUris(workspaceFolderUri, joinPath);
 
     const dirsExist = {};
+    const _exists = async uri => {
+      if (!stat) return true;
+      try {
+        await stat(uri);
+        return true;
+      } catch (_e) {
+        return false;
+      }
+    };
     await Promise.all(
       converters.allConverterNames.map(async name => {
+        const converter = converters.converters[name];
         const dirUri = ctx[`${name}Dir`];
-        if (!stat) {
+        if (await _exists(dirUri)) {
           dirsExist[name] = true;
           return;
         }
-        try {
-          await stat(dirUri);
-          dirsExist[name] = true;
-        } catch (_e) {
-          dirsExist[name] = false;
+        // Some agents (opencode) ship a flat config FILE at the workspace root
+        // rather than a `.<agent>/` directory. Check the converter's
+        // detectFiles list as a secondary signal.
+        const detectFiles = Array.isArray(converter.detectFiles)
+          ? converter.detectFiles
+          : [];
+        for (const fileName of detectFiles) {
+          const fileUri = joinPath(workspaceFolderUri, fileName);
+          if (await _exists(fileUri)) {
+            dirsExist[name] = true;
+            return;
+          }
         }
+        dirsExist[name] = false;
       })
     );
 

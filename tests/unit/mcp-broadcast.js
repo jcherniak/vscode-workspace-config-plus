@@ -363,6 +363,56 @@ suite('mcp-broadcast Suite', () => {
       assert.notExists(writes['/w/.vscode/mcp.json']);
     });
 
+    test('opencode is detected via opencode.json file at workspace root', async () => {
+      const joinPath = makeJoinPath();
+      const writes = {};
+      const writeFile = (uri, body) => {
+        writes[uri.fsPath] = body.toString();
+        return Promise.resolve();
+      };
+      // Only opencode.json exists; no .opencode/ dir, no other agents.
+      const stat = uri => {
+        if (uri.fsPath === '/w/opencode.json') return Promise.resolve({});
+        return Promise.reject({ code: 'ENOENT' });
+      };
+      const readFile = Sinon.stub();
+      readFile.withArgs({ fsPath: '/w/.mcp/team.json' }).resolves(bufFromObj({
+        linear: {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-linear'],
+          agentInclude: ['*'],
+        },
+      }));
+      readFile.resolves(undefined);
+      const readDirectory = Sinon.stub();
+      readDirectory.withArgs(mcpDirUri).resolves([['team.json', FILE]]);
+      readDirectory.resolves([]);
+
+      await broadcast.broadcastMcpToAllAgents({
+        workspaceFolderUri: wsUri,
+        mcpDirUri,
+        joinPath,
+        readFile,
+        writeFile,
+        readDirectory,
+        stat,
+      });
+
+      const opencodeOut = writes['/w/opencode.json'];
+      assert.exists(opencodeOut, 'expected opencode.json to be written');
+      const parsed = JSON.parse(opencodeOut);
+      assert.equal(parsed.mcp.linear.type, 'local');
+      assert.deepEqual(parsed.mcp.linear.command, [
+        'npx',
+        '-y',
+        '@modelcontextprotocol/server-linear',
+      ]);
+      // No other agent dirs exist, so no other writes.
+      assert.notExists(writes['/w/.cursor/mcp.json']);
+      assert.notExists(writes['/w/.mcp.json']);
+    });
+
     test('canonical server without filter + no --target → broadcast everywhere', async () => {
       const joinPath = makeJoinPath();
       const writes = {};

@@ -93,6 +93,66 @@ const _codexSerialize = async (flat, ctx) => {
   return Buffer.from(TOML.stringify(next));
 };
 
+// Opencode's MCP schema differs from the standard:
+//   - top-level wrapper key is "mcp" (not "mcpServers")
+//   - "command" is an array combining the command + its args
+//   - environment variables go in "environment" (not "env")
+//   - "type" is "local" (stdio) or "remote" (http/sse)
+//   - "enabled" defaults to true so users get the server unless they opt out
+//   - https://opencode.ai/docs/mcp-servers/
+//
+// The opencode.json file also holds non-MCP keys (tools, agent, etc.) so the
+// converter does a section-merge: read existing, replace only the `mcp` key,
+// preserve everything else.
+// eslint-disable-next-line max-statements, complexity
+const _transformToOpencode = flat => {
+  const out = {};
+  for (const [name, def] of Object.entries(flat || {})) {
+    if (!def || typeof def !== 'object') continue;
+    const t = def.type;
+    if (t === 'http' || t === 'sse' || (t === undefined && typeof def.url === 'string')) {
+      const remote = { type: 'remote', enabled: true };
+      if (def.url) remote.url = def.url;
+      if (def.headers && typeof def.headers === 'object') remote.headers = def.headers;
+      if (typeof def.timeout === 'number') remote.timeout = def.timeout;
+      out[name] = remote;
+      continue;
+    }
+    // stdio / local (default)
+    const local = { type: 'local', enabled: true };
+    const cmd = typeof def.command === 'string' ? def.command : '';
+    const args = Array.isArray(def.args) ? def.args : [];
+    local.command = cmd ? [cmd, ...args] : [];
+    if (def.env && typeof def.env === 'object') local.environment = def.env;
+    if (typeof def.timeout === 'number') local.timeout = def.timeout;
+    out[name] = local;
+  }
+  return out;
+};
+
+const _readJsonSafe = async (uri, readFile) => {
+  try {
+    const buf = await readFile(uri);
+    if (!buf) return {};
+    const text = buf.toString();
+    if (!text.trim()) return {};
+    return JSON.parse(text) || {};
+  } catch (e) {
+    if (e && (e.code === 'ENOENT' || e.code === 'FileNotFound')) return {};
+    log.warn(`mcp-converters: parsing existing JSON at ${uri.fsPath}: ${e.message}`);
+    log.debug(e);
+    return {};
+  }
+};
+
+const _opencodeSerialize = async (flat, ctx) => {
+  const existing = await _readJsonSafe(ctx.opencodeConfigUri, ctx.readFile);
+  const transformed = _transformToOpencode(flat);
+  // Replace the entire `mcp` key; preserve every other top-level key.
+  const next = { ...existing, mcp: transformed };
+  return Buffer.from(`${JSON.stringify(next, null, 2)}\n`);
+};
+
 const cursorConverter = {
   name: 'cursor',
   agentNames: ['cursor'],
@@ -133,14 +193,29 @@ const codexConverter = {
   serialize: _codexSerialize,
 };
 
+// opencode (https://opencode.ai) uses a flat `opencode.json` at the workspace
+// root rather than a `.opencode/` directory, so detection needs both signals:
+// either `.opencode/` exists (some users use it for agents/commands/plugins
+// subdirs) or `opencode.json` exists.
+const opencodeConverter = {
+  name: 'opencode',
+  agentNames: ['opencode'],
+  configDir: '.opencode',
+  detectFiles: ['opencode.json'],
+  outputUri: ctx => ctx.opencodeConfigUri,
+  wrapKey: 'mcp',
+  serialize: _opencodeSerialize,
+};
+
 const converters = {
   cursor: cursorConverter,
   claude: claudeConverter,
   vscode: vscodeConverter,
   codex: codexConverter,
+  opencode: opencodeConverter,
 };
 
-const allConverterNames = ['cursor', 'claude', 'vscode', 'codex'];
+const allConverterNames = ['cursor', 'claude', 'vscode', 'codex', 'opencode'];
 
 // Every agent name (including aliases like 'copilot') that any converter recognizes.
 // Exposed for documentation / settings dropdowns.
@@ -176,10 +251,13 @@ module.exports = {
   knownWrapKeys,
   normalizeMcpJson,
   filterByAgent,
+  _transformToOpencode,
+  _readJsonSafe,
   cursorConverter,
   claudeConverter,
   vscodeConverter,
   codexConverter,
+  opencodeConverter,
   _stripMetaKeys,
   _readTomlSafe,
 };

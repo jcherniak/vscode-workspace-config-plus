@@ -67,6 +67,112 @@ suite('mcp-converters Suite', () => {
     });
   });
 
+  suite('opencode JSON converter', () => {
+    const opencodeCtx = {
+      opencodeConfigUri: { fsPath: '/w/opencode.json' },
+    };
+
+    test('transforms canonical (stdio) to opencode local schema', () => {
+      const out = converters._transformToOpencode({
+        linear: {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-linear'],
+          env: { LINEAR_API_KEY: 'x' },
+        },
+      });
+      assert.deepEqual(out.linear, {
+        type: 'local',
+        enabled: true,
+        command: ['npx', '-y', '@modelcontextprotocol/server-linear'],
+        environment: { LINEAR_API_KEY: 'x' },
+      });
+    });
+
+    test('transforms canonical (http) to opencode remote schema', () => {
+      const out = converters._transformToOpencode({
+        api: {
+          type: 'http',
+          url: 'https://example.com/mcp',
+          headers: { Authorization: 'Bearer x' },
+        },
+      });
+      assert.deepEqual(out.api, {
+        type: 'remote',
+        enabled: true,
+        url: 'https://example.com/mcp',
+        headers: { Authorization: 'Bearer x' },
+      });
+    });
+
+    test('infers local type when type missing but command present', () => {
+      const out = converters._transformToOpencode({
+        s: { command: 'foo', args: ['a'] },
+      });
+      assert.equal(out.s.type, 'local');
+      assert.deepEqual(out.s.command, ['foo', 'a']);
+    });
+
+    test('passes timeout through', () => {
+      const out = converters._transformToOpencode({
+        s: { type: 'stdio', command: 'foo', timeout: 5000 },
+      });
+      assert.equal(out.s.timeout, 5000);
+    });
+
+    test('serialize section-merges into existing opencode.json (preserves tools/agent keys)', async () => {
+      const existing = {
+        tools: { foo: { enabled: true } },
+        agent: { default: 'claude-3-5-sonnet' },
+      };
+      const readFile = Sinon.stub().resolves(Buffer.from(JSON.stringify(existing)));
+      const buf = await converters.opencodeConverter.serialize(
+        { linear: { type: 'stdio', command: 'npx', args: ['x'] } },
+        { ...opencodeCtx, readFile }
+      );
+      const round = JSON.parse(buf.toString());
+      assert.deepEqual(round.tools, { foo: { enabled: true } });
+      assert.equal(round.agent.default, 'claude-3-5-sonnet');
+      assert.equal(round.mcp.linear.type, 'local');
+    });
+
+    test('serialize replaces existing mcp section entirely', async () => {
+      const existing = {
+        mcp: { stale: { type: 'local', command: ['old'] } },
+        keep: 'me',
+      };
+      const readFile = Sinon.stub().resolves(Buffer.from(JSON.stringify(existing)));
+      const buf = await converters.opencodeConverter.serialize(
+        { fresh: { type: 'stdio', command: 'new', args: [] } },
+        { ...opencodeCtx, readFile }
+      );
+      const round = JSON.parse(buf.toString());
+      assert.equal(round.keep, 'me');
+      assert.notProperty(round.mcp, 'stale');
+      assert.hasAllKeys(round.mcp, ['fresh']);
+    });
+
+    test('serialize treats missing opencode.json as empty', async () => {
+      const readFile = Sinon.stub().rejects({ code: 'ENOENT' });
+      const buf = await converters.opencodeConverter.serialize(
+        { linear: { type: 'stdio', command: 'npx', args: [] } },
+        { ...opencodeCtx, readFile }
+      );
+      const round = JSON.parse(buf.toString());
+      assert.deepEqual(Object.keys(round), ['mcp']);
+      assert.hasAllKeys(round.mcp, ['linear']);
+    });
+
+    test('opencode converter has detectFiles for opencode.json', () => {
+      assert.deepEqual(converters.opencodeConverter.detectFiles, ['opencode.json']);
+    });
+
+    test('opencode is in allConverterNames + agentNames includes opencode', () => {
+      assert.include(converters.allConverterNames, 'opencode');
+      assert.include(converters.opencodeConverter.agentNames, 'opencode');
+    });
+  });
+
   suite('codex TOML converter', () => {
     test('emits [mcp_servers.*] sections and preserves non-MCP TOML', async () => {
       const existing = TOML.stringify({

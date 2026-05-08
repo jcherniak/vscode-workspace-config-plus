@@ -2,6 +2,11 @@
 
 ## v1.3.0
 
+- **opencode** added as a broadcast target (https://opencode.ai). The converter:
+  - Output path: `<root>/opencode.json` (file at workspace root, not a subdir).
+  - Schema transform: canonical `command` + `args` are joined into opencode's `command` array; `env` → `environment`; `type: "stdio"` → `"local"`; `type: "http"` / `"sse"` → `"remote"`; `enabled: true` is set by default.
+  - Section-merge: `opencode.json` typically holds non-MCP keys (`tools`, `agent`, `tui`, etc.) — the converter reads existing content, replaces only the `mcp` key, and preserves everything else.
+  - File-based detection: opencode is detected when either `.opencode/` (subdir for agents/commands/plugins) or `opencode.json` exists at the workspace root. New `detectFiles` array on the converter descriptor supports this.
 - **Contextual default for missing agentInclude/agentExclude in .mcp/ content**: when a server in `.mcp/` (static or generator-emitted) lacks both filter keys, it now defaults based on how the broadcast was launched:
   - `wcp run --target X` → server is treated as `agentInclude: <X's agentNames>` (only the launching agent sees it).
   - `wcp run` (no target) → server is treated as `agentInclude: ["*"]` (broadcast everywhere).

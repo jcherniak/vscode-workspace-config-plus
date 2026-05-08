@@ -6,7 +6,7 @@ const log = require('../log');
 const cliPlatform = require('../cli-platform');
 const mcpBroadcast = require('../mcp-broadcast');
 
-const VALID_TARGETS = ['cursor', 'claude', 'vscode', 'codex'];
+const VALID_TARGETS = ['cursor', 'claude', 'vscode', 'codex', 'opencode'];
 
 const runCommand = async args => {
   log.initializeConsole({ silent: Boolean(args.silent) });
