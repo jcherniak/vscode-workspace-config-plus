@@ -4,6 +4,7 @@ const fileHandler = require('./file-handler');
 const watcher = require('./watcher');
 const log = require('./log');
 const mcpBroadcast = require('./mcp-broadcast');
+const mcpMigration = require('./mcp-migration');
 
 const workspaceConfigFileNames = ['launch', 'settings', 'tasks', 'mcp'];
 const configDirPreference = ['.cursor', '.vscode', '.claude', '.codex', '.gemini'];
@@ -128,6 +129,9 @@ const initializeWorkspaceFolder = async ({
   stat,
   readDirectory,
   showWarningMessage,
+  showInformationMessage,
+  showQuickPick,
+  deleteFile,
   workspaceState,
   getConfiguration,
 }) => {
@@ -136,7 +140,35 @@ const initializeWorkspaceFolder = async ({
   // Check for shared .mcp/ first; if present it OWNS all MCP outputs and the
   // per-tool mcp merges in the loop below are skipped.
   const mcpDirUri = joinPath(folderUri, SHARED_MCP_DIR);
-  const sharedMcpEnabled = await directoryExists(mcpDirUri, stat);
+  let sharedMcpEnabled = await directoryExists(mcpDirUri, stat);
+
+  // Offer migration when .mcp/ is absent but legacy per-tool MCP files exist.
+  if (!sharedMcpEnabled) {
+    try {
+      const migrationResult = await mcpMigration.promptAndMigrate({
+        workspaceFolderUri: folderUri,
+        mcpDirUri,
+        joinPath,
+        readFile,
+        writeFile,
+        deleteFile,
+        stat,
+        readDirectory,
+        showInformationMessage,
+        showQuickPick,
+        showWarningMessage,
+        workspaceState,
+        getConfiguration,
+      });
+      if (migrationResult && migrationResult.written && migrationResult.written.length > 0) {
+        // Migration created .mcp/; proceed with broadcast setup.
+        sharedMcpEnabled = await directoryExists(mcpDirUri, stat);
+      }
+    } catch (e) {
+      log.error(`MCP migration prompt failed: ${e.message}`);
+      log.debug(e);
+    }
+  }
   if (sharedMcpEnabled) {
     foundAnyConfigDir = true;
     _setupSharedMcpBroadcast({
@@ -153,6 +185,10 @@ const initializeWorkspaceFolder = async ({
       workspaceState,
       getConfiguration,
     });
+    // Also: if a .mcp/local.json exists post-migration, the warning fires
+    // automatically when migration writes it. If .mcp/local.json was authored
+    // manually after the fact, the broadcast watcher's first run will produce
+    // outputs that already trigger the warning chain.
   }
 
   for (const dirName of configDirPreference) {
@@ -236,6 +272,9 @@ const handleWorkspaceFolderUpdates = ({
   stat,
   readDirectory,
   showWarningMessage,
+  showInformationMessage,
+  showQuickPick,
+  deleteFile,
   workspaceState,
   getConfiguration,
 }) => {
@@ -251,6 +290,9 @@ const handleWorkspaceFolderUpdates = ({
         stat,
         readDirectory,
         showWarningMessage,
+        showInformationMessage,
+        showQuickPick,
+        deleteFile,
         workspaceState,
         getConfiguration,
       })

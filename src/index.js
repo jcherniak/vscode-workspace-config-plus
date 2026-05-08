@@ -31,6 +31,10 @@ const readDirectory = fileUri =>
   workspace.fs.readDirectory(fileUri).then(entries => entries, () => []);
 const showWarningMessage = (message, ...items) =>
   window.showWarningMessage(message, ...items);
+const showInformationMessage = (message, ...items) =>
+  window.showInformationMessage(message, ...items);
+const showQuickPick = (items, options) => window.showQuickPick(items, options);
+const deleteFile = uri => workspace.fs.delete(uri);
 const getConfiguration = (section, scope) =>
   workspace.getConfiguration(section, scope);
 
@@ -49,6 +53,9 @@ const activate = context => {
     stat,
     readDirectory,
     showWarningMessage,
+    showInformationMessage,
+    showQuickPick,
+    deleteFile,
     workspaceState,
     getConfiguration,
   };

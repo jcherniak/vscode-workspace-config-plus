@@ -196,6 +196,48 @@ suite('mcp-converters Suite', () => {
     });
   });
 
+  suite('normalizeMcpJson (lenient unwrap)', () => {
+    test('unwraps mcpServers wrapper', () => {
+      const flat = converters.normalizeMcpJson({
+        mcpServers: { linear: { command: 'a' } },
+      });
+      assert.deepEqual(flat, { linear: { command: 'a' } });
+    });
+
+    test('unwraps servers wrapper (vscode)', () => {
+      const flat = converters.normalizeMcpJson({
+        servers: { linear: { command: 'a' } },
+      });
+      assert.deepEqual(flat, { linear: { command: 'a' } });
+    });
+
+    test('unwraps mcp_servers wrapper (codex)', () => {
+      const flat = converters.normalizeMcpJson({
+        mcp_servers: { linear: { command: 'a' } },
+      });
+      assert.deepEqual(flat, { linear: { command: 'a' } });
+    });
+
+    test('passes through already-flat input', () => {
+      const flat = converters.normalizeMcpJson({ linear: { command: 'a' } });
+      assert.deepEqual(flat, { linear: { command: 'a' } });
+    });
+
+    test('returns empty object on null/undefined/array input', () => {
+      assert.deepEqual(converters.normalizeMcpJson(null), {});
+      assert.deepEqual(converters.normalizeMcpJson(undefined), {});
+      assert.deepEqual(converters.normalizeMcpJson(['a']), {});
+    });
+
+    test('knownWrapKeys exposes all converter wrap keys', () => {
+      assert.includeMembers(converters.knownWrapKeys, [
+        'mcpServers',
+        'servers',
+        'mcp_servers',
+      ]);
+    });
+  });
+
   suite('knownAgentNames', () => {
     test('includes all converter names plus copilot alias', () => {
       assert.includeMembers(converters.knownAgentNames, [

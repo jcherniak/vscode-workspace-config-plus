@@ -98,7 +98,7 @@ suite('mcp-broadcast Suite', () => {
   });
 
   suite('computeToolOverlay', () => {
-    test('unwraps wrapKey from overlay file', async () => {
+    test('unwraps mcpServers wrapper from overlay file', async () => {
       const joinPath = makeJoinPath();
       const toolDir = { fsPath: '/w/.cursor' };
       const readFile = Sinon.stub();
@@ -109,16 +109,19 @@ suite('mcp-broadcast Suite', () => {
 
       const overlay = await broadcast.computeToolOverlay({
         toolConfigDirUri: toolDir,
-        wrapKey: 'mcpServers',
+        agentNames: ['cursor'],
         joinPath,
         readFile,
         readDirectory: Sinon.stub().resolves([]),
         workspaceFolderUri: wsUri,
       });
-      assert.deepEqual(overlay, { linear: { command: 'cursor-shared' } });
+      assert.deepEqual(overlay.linear, {
+        command: 'cursor-shared',
+        agentInclude: ['cursor'],
+      });
     });
 
-    test('lenient fallback: returns the whole object if wrapKey is absent', async () => {
+    test('lenient fallback: accepts already-flat overlay file', async () => {
       const joinPath = makeJoinPath();
       const readFile = Sinon.stub();
       readFile.withArgs({ fsPath: '/w/.cursor/mcp.shared.json' }).resolves(
@@ -127,13 +130,56 @@ suite('mcp-broadcast Suite', () => {
       readFile.withArgs({ fsPath: '/w/.cursor/mcp.local.json' }).resolves(undefined);
       const overlay = await broadcast.computeToolOverlay({
         toolConfigDirUri: { fsPath: '/w/.cursor' },
-        wrapKey: 'mcpServers',
+        agentNames: ['cursor'],
         joinPath,
         readFile,
         readDirectory: Sinon.stub().resolves([]),
         workspaceFolderUri: wsUri,
       });
-      assert.deepEqual(overlay, { linear: { command: 'flat-form' } });
+      assert.deepEqual(overlay.linear, {
+        command: 'flat-form',
+        agentInclude: ['cursor'],
+      });
+    });
+
+    test('auto-injects agentInclude:<agentNames> on overlay servers without filter', async () => {
+      const joinPath = makeJoinPath();
+      const readFile = Sinon.stub();
+      readFile.withArgs({ fsPath: '/w/.vscode/mcp.shared.json' }).resolves(
+        bufFromObj({ servers: { thing: { command: 'a' } } })
+      );
+      readFile.withArgs({ fsPath: '/w/.vscode/mcp.local.json' }).resolves(undefined);
+      const overlay = await broadcast.computeToolOverlay({
+        toolConfigDirUri: { fsPath: '/w/.vscode' },
+        agentNames: ['vscode', 'copilot'],
+        joinPath,
+        readFile,
+        readDirectory: Sinon.stub().resolves([]),
+        workspaceFolderUri: wsUri,
+      });
+      assert.deepEqual(overlay.thing.agentInclude, ['vscode', 'copilot']);
+    });
+
+    test('preserves an explicit agentInclude on overlay-derived server', async () => {
+      const joinPath = makeJoinPath();
+      const readFile = Sinon.stub();
+      readFile.withArgs({ fsPath: '/w/.cursor/mcp.shared.json' }).resolves(
+        bufFromObj({
+          mcpServers: {
+            tagged: { command: 'a', agentInclude: ['claude'] },
+          },
+        })
+      );
+      readFile.withArgs({ fsPath: '/w/.cursor/mcp.local.json' }).resolves(undefined);
+      const overlay = await broadcast.computeToolOverlay({
+        toolConfigDirUri: { fsPath: '/w/.cursor' },
+        agentNames: ['cursor'],
+        joinPath,
+        readFile,
+        readDirectory: Sinon.stub().resolves([]),
+        workspaceFolderUri: wsUri,
+      });
+      assert.deepEqual(overlay.tagged.agentInclude, ['claude']);
     });
   });
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.0
+
+- **Migration dialog**: when the extension activates and detects legacy per-tool MCP files (`.cursor/mcp.shared.json`, `.cursor/mcp.local.json`, `.cursor/mcp.generator.*.*.js`, and same in `.vscode` / `.claude` / `.codex`) but no `.mcp/` directory, a one-time prompt offers to convert them to the new shared layout. The flow has three steps:
+  - Step 1: `Migrate all` / `Choose services…` / `Don't ask again` / `Dismiss`. Persistence of "don't ask" is per-workspace via `workspaceState`.
+  - Step 2: per-tool generator handling — `Move to .mcp/` (broadcasts to all agents), `Keep tool-specific` (leaves them in `.<tool>/mcp.generator.*.*.js`), or `Skip`.
+  - Step 3: original-file disposition — `Leave originals in place`, `Rename to .bak`, `Delete originals`, or `Cancel migration`.
+- **Lenient JSON unwrap throughout the broadcast pipeline**: `.mcp/*.json` files, `.mcp/*.js` generator output, and tool-specific overlays may all use either the canonical flat form or any known wrapper key (`mcpServers`, `servers`, `mcp_servers`). Lets users migrate generator scripts verbatim without rewriting their return values.
+- **Tool-overlay auto-inject**: servers in `.<tool>/mcp.shared.json` / `.<tool>/mcp.local.json` / `.<tool>/mcp.generator.*.*.js` that lack both `agentInclude` and `agentExclude` are auto-stamped with the converter's `agentNames` (e.g. `["vscode", "copilot"]`). The file's location is treated as the scope declaration, so existing overlays don't need editing.
+- **Migration outputs gitignore-warn**: `.mcp/team.json` and `.mcp/local.json` written by migration go through the same `gitignoreCheck.warnIfTargetNotIgnored` flow as every other extension-written file.
+
 ## v1.1.0
 
 - Add `.claude`, `.codex`, `.gemini` to the list of recognized AI-tool config dirs alongside `.cursor` / `.vscode`. Same `<base>.shared.json` / `<base>.local.json` / `<base>.generator.*.*.js` pattern as today.

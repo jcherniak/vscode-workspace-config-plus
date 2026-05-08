@@ -34,6 +34,26 @@ const _readJsonFile = async (uri, readFile) => {
   }
 };
 
+// Stamp agentInclude on every server in `flat` that lacks both filter keys.
+// Used for tool-specific overlays: the file's location IS the scope declaration,
+// so we default to the converter's agentNames (e.g. ['vscode', 'copilot']).
+const _stampOverlayAgentInclude = (flat, agentNames) => {
+  if (!flat || typeof flat !== 'object') return flat;
+  const out = {};
+  for (const [name, def] of Object.entries(flat)) {
+    if (!def || typeof def !== 'object') {
+      out[name] = def;
+      continue;
+    }
+    if (Array.isArray(def.agentInclude) || Array.isArray(def.agentExclude)) {
+      out[name] = def;
+    } else {
+      out[name] = { ...def, agentInclude: agentNames };
+    }
+  }
+  return out;
+};
+
 const _mergeWithArrayRule = (a, b) => {
   // Pull arrayMerge directive if present at top level of either layer.
   const rule = (b && b[_arrayMergeKey]) || (a && a[_arrayMergeKey]) || 'combine';
@@ -65,7 +85,10 @@ const _runGenerators = async ({
     const scriptFsPath = scriptUri.fsPath || scriptUri.path || `${scriptUri}`;
     try {
       const stdoutText = await runGeneratorScript(scriptFsPath, workspaceFsPath);
-      const obj = _parseJson(stdoutText, scriptFsPath);
+      const raw = _parseJson(stdoutText, scriptFsPath);
+      // Lenient: a generator copied from .<tool>/mcp.generator.*.*.js still emits
+      // its tool-specific wrapped form. Unwrap via the shared registry.
+      const obj = converters.normalizeMcpJson(raw);
       merged = _mergeWithArrayRule(merged, obj);
     } catch (e) {
       log.error(`MCP generator ${g.name}: ${e.message}`);
@@ -94,7 +117,10 @@ const computeCanonical = async ({
   );
   let canonical = {};
   for (const def of definitions) {
-    const obj = await _readJsonFile(joinPath(mcpDirUri, def.name), readFile);
+    const raw = await _readJsonFile(joinPath(mcpDirUri, def.name), readFile);
+    // Lenient: accept either flat or any known wrapped form (mcpServers / servers /
+    // mcp_servers). Lets users migrate old wrapped definitions verbatim.
+    const obj = converters.normalizeMcpJson(raw);
     canonical = _mergeWithArrayRule(canonical, obj);
   }
   if (generators.length > 0) {
@@ -119,7 +145,7 @@ const computeCanonical = async ({
 // eslint-disable-next-line max-statements, complexity
 const computeToolOverlay = async ({
   toolConfigDirUri,
-  wrapKey,
+  agentNames,
   joinPath,
   readFile,
   readDirectory,
@@ -128,8 +154,11 @@ const computeToolOverlay = async ({
 }) => {
   const sharedUri = joinPath(toolConfigDirUri, 'mcp.shared.json');
   const localUri = joinPath(toolConfigDirUri, 'mcp.local.json');
-  const shared = await _readJsonFile(sharedUri, readFile);
-  const local = await _readJsonFile(localUri, readFile);
+  const sharedRaw = await _readJsonFile(sharedUri, readFile);
+  const localRaw = await _readJsonFile(localUri, readFile);
+  // Normalize each input independently; both layers may use either wrapped or flat form.
+  const shared = converters.normalizeMcpJson(sharedRaw);
+  const local = converters.normalizeMcpJson(localRaw);
   let merged = _mergeWithArrayRule(shared, local);
 
   let entries = [];
@@ -147,7 +176,8 @@ const computeToolOverlay = async ({
       const scriptFsPath = scriptUri.fsPath || scriptUri.path;
       try {
         const stdoutText = await fn(scriptFsPath, wsPath);
-        const obj = _parseJson(stdoutText, scriptFsPath);
+        const raw = _parseJson(stdoutText, scriptFsPath);
+        const obj = converters.normalizeMcpJson(raw);
         merged = _mergeWithArrayRule(merged, obj);
       } catch (e) {
         log.error(`Tool MCP generator ${spec.filename}: ${e.message}`);
@@ -156,9 +186,11 @@ const computeToolOverlay = async ({
     }
   }
   merged = _stripMergeDirective(merged);
-  // Unwrap tool overlay using wrapKey, with lenient fallback to the whole object.
-  if (merged && typeof merged === 'object' && merged[wrapKey] && typeof merged[wrapKey] === 'object') {
-    return merged[wrapKey];
+  // Auto-inject agentInclude on overlay-derived servers that lack any filter:
+  // the file's location IS the scope declaration, so default to this converter's
+  // agentNames (e.g. ['vscode', 'copilot']). Existing filters are left untouched.
+  if (Array.isArray(agentNames)) {
+    merged = _stampOverlayAgentInclude(merged, agentNames);
   }
   return merged;
 };
@@ -292,7 +324,7 @@ const broadcastMcpToAllAgents = async ({
       const toolDirUri = ctx[`${name}Dir`];
       const overlay = await computeToolOverlay({
         toolConfigDirUri: toolDirUri,
-        wrapKey: converter.wrapKey,
+        agentNames: converter.agentNames,
         joinPath,
         readFile,
         readDirectory,

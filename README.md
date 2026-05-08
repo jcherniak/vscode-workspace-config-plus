@@ -234,6 +234,30 @@ When `.mcp/` exists, the broadcast pipeline owns every per-tool MCP output and s
 - Output goes to `.codex/config.toml` at the workspace root. Project-scoped config requires a recent Codex CLI version that reads project-level `.codex/`. The extension does **not** write `~/.codex/config.toml` (the user-level Codex config) — that's intentional.
 - HTTP/SSE server schemas in Codex TOML are less standardized than stdio. The converter writes canonical fields verbatim; stdio is the well-supported case.
 
+#### Migration from the legacy per-tool layout
+
+If you already have `.cursor/mcp.shared.json`, `.vscode/mcp.shared.json`, `.claude/mcp.shared.json`, or `.codex/mcp.shared.json` (with or without `mcp.local.json` and `mcp.generator.*.*.js` siblings), the extension will offer a one-time migration dialog when it activates and `.mcp/` doesn't yet exist.
+
+The dialog has three steps:
+
+1. **Convert?** — `Migrate all`, `Choose services…`, `Don't ask again`, or `Dismiss`. "Choose services…" opens a multi-select listing each detected tool; everything is pre-checked.
+2. **Generator handling, per tool** — for each tool that has `mcp.generator.*.*.js` files, you choose:
+   - `Move to .mcp/` — copies the script to `.mcp/<name>.<priority>.js`. Its output runs through the lenient unwrap and gets `agentInclude: ["*"]` injected, so it broadcasts to every agent.
+   - `Keep tool-specific` — leaves the script in place. The overlay path auto-stamps the tool's `agentNames` so it stays scoped.
+   - `Skip` — touches nothing for this tool's generators.
+3. **Original files** — `Leave originals in place` (recommended), `Rename to .bak`, `Delete originals`, or `Cancel migration`.
+
+Migration produces:
+- `.mcp/team.json` from each tool's `mcp.shared.json` (servers stamped with `agentInclude: [<sourceTool>]` to preserve the original scope).
+- `.mcp/local.json` from each tool's `mcp.local.json` (same stamping).
+- Optional copied generators in `.mcp/<name>.<priority>.js`.
+
+After migration, both `.mcp/team.json` and `.mcp/local.json` go through the same gitignore-warning flow as every other file the extension writes.
+
+##### Lenient input format
+
+In `.mcp/*.json` files and in any generator's stdout, you can author either the canonical flat shape or a wrapped shape — `{ mcpServers: { ... } }`, `{ servers: { ... } }`, or `{ mcp_servers: { ... } }` are all auto-unwrapped to the same flat representation before merging. This lets you move legacy wrapped files into `.mcp/` without rewriting them.
+
 ### Limitations
 
 All configuration setting values are ultimately stored and persisted in the native workspace configuration files (e.g. `.vscode/settings.json`, `.cursor/mcp.json`). However, because these features are added via an extension there are some associated limitations and accordingly we'd strongly advise against manually modifying those native files when using the extension, and instead advise managing your configuration in the shared/local files.

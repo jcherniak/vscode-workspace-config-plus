@@ -148,10 +148,33 @@ const knownAgentNames = Array.from(
   new Set(Object.values(converters).flatMap(c => c.agentNames))
 );
 
+// All wrapper keys recognized for lenient unwrap (mcpServers, servers, mcp_servers).
+const knownWrapKeys = Array.from(
+  new Set(Object.values(converters).map(c => c.wrapKey))
+);
+
+// Lenient unwrap: if `raw` has a top-level key matching any known converter wrapKey,
+// return raw[wrapKey] (the inner flat map). Otherwise treat raw as already-flat.
+// Used uniformly for: static .mcp/ definitions, .mcp/ generator output, and
+// tool-specific overlay files. Lets a generator emit { mcpServers: {...} }
+// (Cursor's wrapped form) and have it Just Work in the broadcast pipeline.
+const normalizeMcpJson = raw => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  for (const wrapKey of knownWrapKeys) {
+    const inner = raw[wrapKey];
+    if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+      return inner;
+    }
+  }
+  return raw;
+};
+
 module.exports = {
   converters,
   allConverterNames,
   knownAgentNames,
+  knownWrapKeys,
+  normalizeMcpJson,
   filterByAgent,
   cursorConverter,
   claudeConverter,
