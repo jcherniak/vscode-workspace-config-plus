@@ -2,6 +2,7 @@
 
 ## v1.3.0
 
+- **`wcp run --silent` + missing .mcp/ → exit 0 silently** (hook-friendly). When the SessionStart hook fires in a workspace that doesn't use `.mcp/` broadcast, the hook now exits silently instead of logging a "no .mcp/ directory found" error. Manual invocations (`wcp run` without `--silent`) still get the helpful error pointing at `wcp migrate`.
 - **CLI build (`wcp`)**: ship a single-file Node CLI bundle alongside the VSCode extension. Same broadcast/migration logic, callable from terminals, hooks, and CI.
   - `wcp run [--target <agent>] [--silent]` — run the broadcast once. With `--target`, only that agent's output file is written (skipping the other converters entirely). Hooks/wrappers always set `--target` and `--silent`.
   - `wcp wrap <agent> -- <agent args>` — wrapper trampoline for `codex` and `gemini`. Internally runs a scoped broadcast (`--target <agent>`), then `exec`s the real agent binary with the original args. Skips any candidate on `PATH` whose realpath is the wrapper itself, so `wcp-codex` symlinks don't loop.

@@ -80,6 +80,29 @@ suite('CLI Suite', () => {
     });
   });
 
+  suite('run command', () => {
+    test('--silent + no .mcp/ exits 0 silently (hook-friendly)', async () => {
+      const { runCommand } = require('../../src/cli/run');
+      const dir = await _mkTempDir();
+      const code = await runCommand({ root: dir, silent: true, target: 'claude' });
+      assert.equal(code, 0);
+    });
+
+    test('non-silent + no .mcp/ exits 1 with error', async () => {
+      const { runCommand } = require('../../src/cli/run');
+      const dir = await _mkTempDir();
+      const code = await runCommand({ root: dir, silent: false, target: 'claude' });
+      assert.equal(code, 1);
+    });
+
+    test('unknown --target exits 2', async () => {
+      const { runCommand } = require('../../src/cli/run');
+      const dir = await _mkTempDir();
+      const code = await runCommand({ root: dir, silent: true, target: 'bogus' });
+      assert.equal(code, 2);
+    });
+  });
+
   suite('cli-platform', () => {
     test('readFile returns Buffer for present file', async () => {
       const dir = await _mkTempDir();

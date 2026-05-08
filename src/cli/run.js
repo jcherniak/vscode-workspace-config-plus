@@ -24,6 +24,13 @@ const runCommand = async args => {
   try {
     await fs.access(mcpDirAbs);
   } catch (_e) {
+    // In --silent mode (hook usage), "no .mcp/ here" is the common case for
+    // workspaces that don't use the broadcast feature. Exit 0 silently so we
+    // don't spam session-start logs. Manual invocations still get the
+    // helpful error.
+    if (args.silent) {
+      return 0;
+    }
     log.error(
       `No .mcp/ directory found at ${workspaceRoot}. Run \`wcp migrate\` if you have legacy per-tool MCP files, or create .mcp/ with your canonical definitions.`
     );
