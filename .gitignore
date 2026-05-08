@@ -8,3 +8,4 @@ npm-debug*
 .vsix/
 .vscode/*.json
 !.vscode/*.shared.json
+dist/

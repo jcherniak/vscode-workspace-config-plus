@@ -1,6 +1,6 @@
 'use strict';
 
-const TOML = require('@iarna/toml');
+const TOML = require('smol-toml');
 const log = require('./log');
 
 const _AGENT_META_KEYS = ['agentInclude', 'agentExclude'];

@@ -2,7 +2,7 @@
 
 const { assert } = require('chai');
 const Sinon = require('sinon');
-const TOML = require('@iarna/toml');
+const TOML = require('smol-toml');
 
 const converters = require('../../src/mcp-converters');
 const log = require('../../src/log');

@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.3.0
+
+- **CLI build (`wcp`)**: ship a single-file Node CLI bundle alongside the VSCode extension. Same broadcast/migration logic, callable from terminals, hooks, and CI.
+  - `wcp run [--target <agent>] [--silent]` — run the broadcast once. With `--target`, only that agent's output file is written (skipping the other converters entirely). Hooks/wrappers always set `--target` and `--silent`.
+  - `wcp wrap <agent> -- <agent args>` — wrapper trampoline for `codex` and `gemini`. Internally runs a scoped broadcast (`--target <agent>`), then `exec`s the real agent binary with the original args. Skips any candidate on `PATH` whose realpath is the wrapper itself, so `wcp-codex` symlinks don't loop.
+  - `wcp migrate` — interactive migration prompt (the same three-step dialog as the extension). Requires a TTY.
+- **`--target` scoping in `broadcastMcpToAllAgents`**: pass `target: '<agent>'` to scope the broadcast pipeline to a single converter. Used by the CLI's hot-path commands.
+- **`log.initializeConsole({ silent })`**: log.js now supports a CLI/console sink (stdout/stderr) alongside the existing VSCode `OutputChannel` sink. `--silent` mode suppresses INFO/DEBUG so hook output stays clean.
+- **Claude `SessionStart` hook**: documented copy-paste recipe for `.claude/settings.json` that runs `wcp run --target claude --silent` before each Claude session.
+- **Codex/Gemini wrapper aliases**: documented `alias codex='wcp wrap codex --'` (and `gemini`) for transparent broadcast-on-launch.
+- **Build pipeline**: new `npm run build:cli` (esbuild bundle). Output: `dist/wcp.js` (~320 KiB, single file with shebang). `chmod +x` is applied automatically. Works on Node 18+.
+- **TOML library swap**: replaced `@iarna/toml` with `smol-toml`. `@iarna/toml`'s lazy-require pattern (`require('./impl/format')`) was unbundleable by esbuild; `smol-toml` is ESM/CJS native and statically analyzable. Same parse/stringify API; behavior unchanged. ~40 KiB smaller bundle.
+
 ## v1.2.0
 
 - **Migration dialog**: when the extension activates and detects legacy per-tool MCP files (`.cursor/mcp.shared.json`, `.cursor/mcp.local.json`, `.cursor/mcp.generator.*.*.js`, and same in `.vscode` / `.claude` / `.codex`) but no `.mcp/` directory, a one-time prompt offers to convert them to the new shared layout. The flow has three steps:

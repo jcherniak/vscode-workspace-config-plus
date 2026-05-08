@@ -3,7 +3,10 @@
   "displayName": "Workspace Config+",
   "description": "Merge shared/local/generated workspace config across .vscode, .cursor, .claude, .codex, .gemini. Drop a flat 'serverName -> serverDef' JSON map (or generator) in .mcp/ and it broadcasts to every agent's expected MCP file with per-agent format conversion: 'mcpServers' for Cursor/Claude/Copilot, 'servers' for VSCode, '[mcp_servers.*]' TOML for Codex. Per-server agentInclude / agentExclude filter which agents see each definition.",
   "main": "src/index.js",
-  "version": "1.2.0",
+  "bin": {
+    "wcp": "dist/wcp.js"
+  },
+  "version": "1.3.0",
   "license": "MIT",
   "preview": true,
   "private": true,
@@ -179,6 +182,7 @@
     "@swellaby/eslint-config": "^2.0.0",
     "c8": "^8.0.1",
     "chai": "^4.3.10",
+    "esbuild": "^0.28.0",
     "eslint": "^8.48.0",
     "mocha": "^10.2.0",
     "mocha-multi-reporters": "^1.5.1",
@@ -189,13 +193,16 @@
     "vsce": "^2.15.0"
   },
   "dependencies": {
-    "@iarna/toml": "^2.2.5",
     "deepmerge": "^4.3.1",
     "ignore": "^5.3.2",
-    "jsonc-parser": "^3.2.0"
+    "jsonc-parser": "^3.2.0",
+    "mri": "^1.2.0",
+    "prompts": "^2.4.2",
+    "smol-toml": "^1.6.1"
   },
   "scripts": {
     "build": "npm test",
+    "build:cli": "node build/build-cli.mjs",
     "clean": "rimraf .testresults .coverage .vsix",
     "coverage": "npm run coverage:unit",
     "coverage:unit": "c8 -c tests/unit/.c8rc.json npm run test:unit",

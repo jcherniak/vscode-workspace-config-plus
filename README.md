@@ -258,6 +258,86 @@ After migration, both `.mcp/team.json` and `.mcp/local.json` go through the same
 
 In `.mcp/*.json` files and in any generator's stdout, you can author either the canonical flat shape or a wrapped shape — `{ mcpServers: { ... } }`, `{ servers: { ... } }`, or `{ mcp_servers: { ... } }` are all auto-unwrapped to the same flat representation before merging. This lets you move legacy wrapped files into `.mcp/` without rewriting them.
 
+### CLI (`wcp`)
+
+The same broadcast/migration logic ships as a single-file Node CLI for use outside of VSCode/Cursor — terminals, scripts, hooks, and CI. Build once, copy anywhere.
+
+#### Build
+
+```bash
+npm install
+npm run build:cli      # writes dist/wcp.js (~320 KiB single file with shebang)
+cp dist/wcp.js ~/.local/bin/wcp
+```
+
+Requires Node 18+ on the target machine.
+
+#### Commands
+
+```text
+wcp run [--target <agent>] [--root <path>] [--silent]
+    Run the .mcp/ broadcast once. Writes only the named target's output file
+    when --target is set; otherwise broadcasts to every detected agent.
+    Hooks/wrappers should always set --target and --silent.
+
+wcp wrap <agent> -- <agent args>
+    Wrapper trampoline for codex / gemini. Runs a scoped broadcast for the
+    given agent, then execs the real agent binary with the remaining args.
+    Skips any binary whose realpath matches the wcp wrapper itself.
+
+wcp migrate [--root <path>]
+    Interactive migration from legacy per-tool MCP files into .mcp/.
+    Three steps: which services -> generator handling -> original-file
+    disposition. Requires a TTY.
+```
+
+#### Per-agent integration
+
+| Agent | Reload mechanism | Recommended setup |
+|-------|------------------|-------------------|
+| **Claude Code** | `SessionStart` hook | Add the snippet below to `.claude/settings.json`. |
+| **Cursor** | Auto-reload on file change | The VSCode extension covers this. CLI is the manual fallback. |
+| **VSCode** | Auto-reload on file change | Same — extension is the primary path. |
+| **Codex CLI** | Reads config at startup | `alias codex='wcp wrap codex --'` |
+| **Gemini CLI** | Reads config at startup | `alias gemini='wcp wrap gemini --'` |
+| GitHub Copilot CLI | Global `~/.copilot/mcp-config.json` | Out of scope — manage manually. |
+
+##### Claude SessionStart hook
+
+```jsonc
+// .claude/settings.json (or .claude/settings.local.json)
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "wcp run --target claude --silent" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The `--target claude` is what scopes the broadcast to writing only `<root>/.mcp.json` — Cursor/VSCode/Codex outputs are skipped on this code path. `--silent` suppresses non-error output so the session-start log stays clean.
+
+##### Codex/Gemini wrapper aliases
+
+```bash
+# In ~/.bashrc or ~/.zshrc:
+alias codex='wcp wrap codex --'
+alias gemini='wcp wrap gemini --'
+```
+
+The trailing `--` lets agent flags pass through unambiguously. `wcp wrap codex` runs a scoped broadcast for Codex (only `.codex/config.toml` is written), then `exec`s the real `codex` binary with the user's original args.
+
+#### Why scope to a single agent
+
+When invoked from Claude's `SessionStart` hook, the only file Claude needs is `<root>/.mcp.json`. Writing `.codex/config.toml`, `.cursor/mcp.json`, and `.vscode/mcp.json` at that moment is wasted work and a chance to thrash other agents' configs while they're not running. `--target <agent>` scopes the broadcast pipeline to a single converter and exits fast.
+
+The "broadcast to everything" mode is still available without `--target` for explicit manual invocations from a shell or CI.
+
 ### Limitations
 
 All configuration setting values are ultimately stored and persisted in the native workspace configuration files (e.g. `.vscode/settings.json`, `.cursor/mcp.json`). However, because these features are added via an extension there are some associated limitations and accordingly we'd strongly advise against manually modifying those native files when using the extension, and instead advise managing your configuration in the shared/local files.
