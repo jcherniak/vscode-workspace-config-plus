@@ -252,13 +252,25 @@ const _resolveTargetUris = (workspaceFolderUri, joinPath) => {
   };
 };
 
-const _enabledTargets = (cfgValue, dirsExist) => {
+const _enabledTargets = (cfgValue, dirsExist, targetFilter) => {
   const enabled = Array.isArray(cfgValue)
     ? cfgValue
     : converters.allConverterNames;
-  return enabled.filter(name => dirsExist[name]);
+  let list = enabled.filter(name => dirsExist[name]);
+  // Hot-path scoping: when invoked from a hook or wrapper, restrict to a
+  // single named target (e.g. 'claude' from SessionStart, 'codex' from
+  // `wcp wrap codex`). Skips writing the other agents' files entirely.
+  if (typeof targetFilter === 'string' && targetFilter.length > 0) {
+    list = list.filter(name => name === targetFilter);
+  } else if (Array.isArray(targetFilter) && targetFilter.length > 0) {
+    list = list.filter(name => targetFilter.includes(name));
+  }
+  return list;
 };
 
+// Accepts an optional `target` arg (string, e.g. 'claude' or 'codex') to scope
+// the broadcast to a single agent's output. When omitted, broadcasts to every
+// detected/enabled agent.
 // eslint-disable-next-line max-statements, complexity
 const broadcastMcpToAllAgents = async ({
   workspaceFolderUri,
@@ -272,6 +284,7 @@ const broadcastMcpToAllAgents = async ({
   workspaceState,
   getConfiguration,
   runGeneratorScript,
+  target,
 }) => {
   try {
     const ctx = _resolveTargetUris(workspaceFolderUri, joinPath);
@@ -304,7 +317,7 @@ const broadcastMcpToAllAgents = async ({
         // ignore
       }
     }
-    const enabledNames = _enabledTargets(cfgEnabled, dirsExist);
+    const enabledNames = _enabledTargets(cfgEnabled, dirsExist, target);
     if (enabledNames.length === 0) {
       log.debug('MCP broadcast: no enabled targets present in workspace');
       return;

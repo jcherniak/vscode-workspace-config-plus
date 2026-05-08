@@ -203,6 +203,36 @@ suite('mcp-broadcast Suite', () => {
       });
       assert.deepEqual(enabled, ['claude', 'codex']);
     });
+
+    test('targetFilter (string) scopes to a single agent', () => {
+      const enabled = broadcast._enabledTargets(undefined, {
+        cursor: true,
+        claude: true,
+        vscode: true,
+        codex: true,
+      }, 'claude');
+      assert.deepEqual(enabled, ['claude']);
+    });
+
+    test('targetFilter (array) scopes to listed agents', () => {
+      const enabled = broadcast._enabledTargets(undefined, {
+        cursor: true,
+        claude: true,
+        vscode: true,
+        codex: true,
+      }, ['claude', 'codex']);
+      assert.deepEqual(enabled, ['claude', 'codex']);
+    });
+
+    test('targetFilter still respects dir presence (no spurious targets)', () => {
+      const enabled = broadcast._enabledTargets(undefined, {
+        cursor: false,
+        claude: true,
+        vscode: false,
+        codex: false,
+      }, 'cursor');
+      assert.deepEqual(enabled, []);
+    });
   });
 
   suite('broadcastMcpToAllAgents (precedence)', () => {
