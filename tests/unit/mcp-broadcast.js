@@ -327,6 +327,77 @@ suite('mcp-broadcast Suite', () => {
       assert.notInclude(vscodeOut.body, 'only_claude');
     });
 
+    test('canonical server without filter + --target claude → scoped to claude', async () => {
+      const joinPath = makeJoinPath();
+      const writes = {};
+      const writeFile = (uri, body) => {
+        writes[uri.fsPath] = body.toString();
+        return Promise.resolve();
+      };
+      const stat = () => Promise.resolve({});
+      const readFile = Sinon.stub();
+      readFile.withArgs({ fsPath: '/w/.mcp/team.json' }).resolves(bufFromObj({
+        unfiltered: { command: 'a' },
+      }));
+      readFile.resolves(undefined);
+      const readDirectory = Sinon.stub();
+      readDirectory.withArgs(mcpDirUri).resolves([['team.json', FILE]]);
+      readDirectory.resolves([]);
+
+      await broadcast.broadcastMcpToAllAgents({
+        workspaceFolderUri: wsUri,
+        mcpDirUri,
+        target: 'claude',
+        joinPath,
+        readFile,
+        writeFile,
+        readDirectory,
+        stat,
+      });
+
+      const claudeOut = writes['/w/.mcp.json'];
+      assert.exists(claudeOut, 'expected <root>/.mcp.json to be written for --target claude');
+      assert.include(claudeOut, 'unfiltered');
+      // No other targets should have been written under --target claude.
+      assert.notExists(writes['/w/.cursor/mcp.json']);
+      assert.notExists(writes['/w/.vscode/mcp.json']);
+    });
+
+    test('canonical server without filter + no --target → broadcast everywhere', async () => {
+      const joinPath = makeJoinPath();
+      const writes = {};
+      const writeFile = (uri, body) => {
+        writes[uri.fsPath] = body.toString();
+        return Promise.resolve();
+      };
+      const stat = () => Promise.resolve({});
+      const readFile = Sinon.stub();
+      readFile.withArgs({ fsPath: '/w/.mcp/team.json' }).resolves(bufFromObj({
+        unfiltered: { command: 'a' },
+      }));
+      readFile.resolves(undefined);
+      const readDirectory = Sinon.stub();
+      readDirectory.withArgs(mcpDirUri).resolves([['team.json', FILE]]);
+      readDirectory.resolves([]);
+
+      await broadcast.broadcastMcpToAllAgents({
+        workspaceFolderUri: wsUri,
+        mcpDirUri,
+        // no target → broadcast everywhere
+        joinPath,
+        readFile,
+        writeFile,
+        readDirectory,
+        stat,
+      });
+
+      // Server should appear in all four outputs (default agentInclude:['*']).
+      assert.include(writes['/w/.cursor/mcp.json'], 'unfiltered');
+      assert.include(writes['/w/.mcp.json'], 'unfiltered');
+      assert.include(writes['/w/.vscode/mcp.json'], 'unfiltered');
+      assert.include(writes['/w/.codex/config.toml'], 'unfiltered');
+    });
+
     test('agentInclude:[copilot] still lands in .vscode/mcp.json (alias)', async () => {
       const joinPath = makeJoinPath();
       const writes = [];

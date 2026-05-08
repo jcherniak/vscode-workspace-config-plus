@@ -35,9 +35,12 @@ const _readJsonFile = async (uri, readFile) => {
 };
 
 // Stamp agentInclude on every server in `flat` that lacks both filter keys.
-// Used for tool-specific overlays: the file's location IS the scope declaration,
-// so we default to the converter's agentNames (e.g. ['vscode', 'copilot']).
-const _stampOverlayAgentInclude = (flat, agentNames) => {
+// Used for tool-specific overlays AND for canonical .mcp/ content: the
+// launching context determines the default. For overlays, the file's location
+// IS the scope declaration → use the converter's agentNames. For canonical
+// content with --target X → use X's agentNames (only the launching agent).
+// For canonical content with no --target → use ['*'] (broadcast).
+const _stampMissingAgentInclude = (flat, agentNames) => {
   if (!flat || typeof flat !== 'object') return flat;
   const out = {};
   for (const [name, def] of Object.entries(flat)) {
@@ -53,6 +56,9 @@ const _stampOverlayAgentInclude = (flat, agentNames) => {
   }
   return out;
 };
+
+// Backward-compat alias kept for callers in computeToolOverlay.
+const _stampOverlayAgentInclude = _stampMissingAgentInclude;
 
 const _mergeWithArrayRule = (a, b) => {
   // Pull arrayMerge directive if present at top level of either layer.
@@ -345,7 +351,16 @@ const broadcastMcpToAllAgents = async ({
         runGeneratorScript,
       });
       const combined = _mergeWithArrayRule(canonical, overlay);
-      const filtered = converters.filterByAgent(combined, converter.agentNames);
+      // Default agentInclude for canonical servers that lack a filter:
+      //  - When invoked with --target X: use the launching converter's
+      //    agentNames so the server is scoped to that agent only.
+      //  - When invoked without --target (full broadcast): use ['*'] so
+      //    missing-filter servers go everywhere.
+      // Overlay servers were already stamped in computeToolOverlay with the
+      // converter's agentNames, so this pass leaves them alone.
+      const defaultAgentInclude = target ? converter.agentNames : ['*'];
+      const stamped = _stampMissingAgentInclude(combined, defaultAgentInclude);
+      const filtered = converters.filterByAgent(stamped, converter.agentNames);
       const body = await converter.serialize(filtered, {
         ...ctx,
         readFile,

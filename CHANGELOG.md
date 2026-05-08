@@ -2,6 +2,10 @@
 
 ## v1.3.0
 
+- **Contextual default for missing agentInclude/agentExclude in .mcp/ content**: when a server in `.mcp/` (static or generator-emitted) lacks both filter keys, it now defaults based on how the broadcast was launched:
+  - `wcp run --target X` → server is treated as `agentInclude: <X's agentNames>` (only the launching agent sees it).
+  - `wcp run` (no target) → server is treated as `agentInclude: ["*"]` (broadcast everywhere).
+  This unblocks generators authored before v1.1.0 (and lets users drop in legacy generator scripts that emit `{ mcpServers: { ... } }` fragments verbatim) without forcing every server to declare an explicit filter. Servers WITH explicit filters still honor exactly what the user wrote.
 - **`wcp run --silent` + missing .mcp/ → exit 0 silently** (hook-friendly). When the SessionStart hook fires in a workspace that doesn't use `.mcp/` broadcast, the hook now exits silently instead of logging a "no .mcp/ directory found" error. Manual invocations (`wcp run` without `--silent`) still get the helpful error pointing at `wcp migrate`.
 - **CLI build (`wcp`)**: ship a single-file Node CLI bundle alongside the VSCode extension. Same broadcast/migration logic, callable from terminals, hooks, and CI.
   - `wcp run [--target <agent>] [--silent]` — run the broadcast once. With `--target`, only that agent's output file is written (skipping the other converters entirely). Hooks/wrappers always set `--target` and `--silent`.
