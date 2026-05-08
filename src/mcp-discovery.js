@@ -4,9 +4,18 @@ const log = require('./log');
 
 const _GENERATOR_PATTERN = /^(.+)\.(\d+)\.js$/;
 
+// Filenames in .mcp/ that are reserved for the extension's own use and must
+// NOT be treated as server-definition JSON. Without this exclusion, e.g.
+// wcp-config.json's `{ "agents": ["claude", ...] }` gets deep-merged into the
+// canonical server map and `agents` ends up as a key in every emitted output.
+const _RESERVED_FILENAMES = new Set(['wcp-config.json']);
+
 const _isFileEntry = entry => Array.isArray(entry) && entry[1] === 1;
 
 const _classify = name => {
+  if (_RESERVED_FILENAMES.has(name)) {
+    return null;
+  }
   if (name.endsWith('.json')) {
     return { kind: 'definition', name, sortKey: name.toLowerCase() };
   }
@@ -69,4 +78,5 @@ module.exports = {
   classifyMcpDirEntries,
   readMcpDir,
   _GENERATOR_PATTERN,
+  _RESERVED_FILENAMES,
 };

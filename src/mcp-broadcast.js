@@ -41,11 +41,13 @@ const _readJsonFile = async (uri, readFile) => {
 // content with --target X → use X's agentNames (only the launching agent).
 // For canonical content with no --target → use ['*'] (broadcast).
 const _stampMissingAgentInclude = (flat, agentNames) => {
-  if (!flat || typeof flat !== 'object') return flat;
+  if (!flat || typeof flat !== 'object' || Array.isArray(flat)) return flat;
   const out = {};
   for (const [name, def] of Object.entries(flat)) {
-    if (!def || typeof def !== 'object') {
-      out[name] = def;
+    // Skip non-plain-object values (arrays, null, primitives). Spreading an
+    // array into an object literal converts indices to string keys — defensively
+    // exclude before that ever happens.
+    if (!def || typeof def !== 'object' || Array.isArray(def)) {
       continue;
     }
     if (Array.isArray(def.agentInclude) || Array.isArray(def.agentExclude)) {

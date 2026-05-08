@@ -83,6 +83,18 @@ suite('mcp-discovery Suite', () => {
       const result = discovery.classifyMcpDirEntries(null);
       assert.deepEqual(result, { definitions: [], generators: [] });
     });
+
+    test('excludes wcp-config.json (reserved filename)', () => {
+      const { definitions } = discovery.classifyMcpDirEntries([
+        ['team.json', FILE],
+        ['wcp-config.json', FILE],
+      ]);
+      assert.deepEqual(definitions.map(d => d.name), ['team.json']);
+    });
+
+    test('reserved filename set is exposed for testing', () => {
+      assert.isTrue(discovery._RESERVED_FILENAMES.has('wcp-config.json'));
+    });
   });
 
   suite('readMcpDir', () => {

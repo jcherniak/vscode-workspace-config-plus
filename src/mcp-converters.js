@@ -44,7 +44,10 @@ const filterByAgent = (flat, agentNames) => {
   const names = Array.isArray(agentNames) ? agentNames : [agentNames];
   const out = {};
   for (const [name, def] of Object.entries(flat || {})) {
-    if (!def || typeof def !== 'object') continue;
+    // Skip non-plain-object values (arrays, null, primitives). A stray array
+    // in the canonical map (e.g. from a misclassified config file) must never
+    // become a server entry.
+    if (!def || typeof def !== 'object' || Array.isArray(def)) continue;
     const verdict = _passesAgentFilter(def, names);
     if (verdict === 'conflict') {
       log.error(
@@ -108,7 +111,7 @@ const _codexSerialize = async (flat, ctx) => {
 const _transformToOpencode = flat => {
   const out = {};
   for (const [name, def] of Object.entries(flat || {})) {
-    if (!def || typeof def !== 'object') continue;
+    if (!def || typeof def !== 'object' || Array.isArray(def)) continue;
     const t = def.type;
     if (t === 'http' || t === 'sse' || (t === undefined && typeof def.url === 'string')) {
       const remote = { type: 'remote', enabled: true };

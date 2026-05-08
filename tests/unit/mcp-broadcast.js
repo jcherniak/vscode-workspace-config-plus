@@ -436,6 +436,58 @@ suite('mcp-broadcast Suite', () => {
       assert.notExists(writes['/w/opencode.json']);
     });
 
+    test('wcp-config.json content does NOT leak into output (no agents key, no numeric-indices object)', async () => {
+      const joinPath = makeJoinPath();
+      const writes = {};
+      const writeFile = (uri, body) => {
+        writes[uri.fsPath] = body.toString();
+        return Promise.resolve();
+      };
+      const stat = uri => {
+        if (uri.fsPath === '/w/.claude') return Promise.resolve({});
+        return Promise.reject({ code: 'ENOENT' });
+      };
+      const readFile = Sinon.stub();
+      // wcp-config.json present with `agents` field — should be IGNORED by discovery.
+      readFile.withArgs({ fsPath: '/w/.mcp/wcp-config.json' }).resolves(
+        Buffer.from(JSON.stringify({ agents: ['claude'] }))
+      );
+      readFile.withArgs({ fsPath: '/w/.mcp/team.json' }).resolves(bufFromObj({
+        linear: {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', 'linear-mcp'],
+          agentInclude: ['*'],
+        },
+      }));
+      readFile.resolves(undefined);
+      const readDirectory = Sinon.stub();
+      readDirectory.withArgs(mcpDirUri).resolves([
+        ['team.json', FILE],
+        ['wcp-config.json', FILE],
+      ]);
+      readDirectory.resolves([]);
+
+      await broadcast.broadcastMcpToAllAgents({
+        workspaceFolderUri: wsUri,
+        mcpDirUri,
+        joinPath,
+        readFile,
+        writeFile,
+        readDirectory,
+        stat,
+      });
+
+      const claudeOut = writes['/w/.mcp.json'];
+      assert.exists(claudeOut);
+      const parsed = JSON.parse(claudeOut);
+      assert.notProperty(parsed.mcpServers, 'agents');
+      // Verify no numeric-indexed pseudo-server snuck in (the spread-array bug).
+      assert.notProperty(parsed.mcpServers, '0');
+      assert.notProperty(parsed.mcpServers, '1');
+      assert.hasAllKeys(parsed.mcpServers, ['linear']);
+    });
+
     test('first run auto-generates .mcp/wcp-config.json from detected artifacts', async () => {
       const joinPath = makeJoinPath();
       const writes = {};
