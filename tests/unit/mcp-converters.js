@@ -13,11 +13,13 @@ const sampleFlat = {
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-linear'],
     env: { LINEAR_API_KEY: 'x' },
+    agentInclude: ['*'],
   },
   remote: {
     type: 'http',
     url: 'https://example.com',
     headers: { Authorization: 'Bearer x' },
+    agentInclude: ['*'],
   },
 };
 
@@ -113,10 +115,30 @@ suite('mcp-converters Suite', () => {
   });
 
   suite('filterByAgent', () => {
-    test('passes through servers with no agent meta', () => {
+    test('passes through servers with agentInclude:["*"] for any agent', () => {
       const out = converters.filterByAgent(sampleFlat, ['claude']);
       assert.hasAllKeys(out, ['linear', 'remote']);
       assert.notProperty(out.linear, 'agentInclude');
+    });
+
+    test('drops servers missing both agentInclude and agentExclude', () => {
+      const flat = { stale: { command: 'a' } };
+      const out = converters.filterByAgent(flat, ['claude']);
+      assert.deepEqual(out, {});
+      Sinon.assert.calledWithMatch(log.error, /must declare agentInclude or agentExclude/);
+    });
+
+    test('agentInclude:["*"] matches every agent', () => {
+      const flat = { everywhere: { command: 'a', agentInclude: ['*'] } };
+      assert.hasAllKeys(converters.filterByAgent(flat, ['claude']), ['everywhere']);
+      assert.hasAllKeys(converters.filterByAgent(flat, ['cursor']), ['everywhere']);
+      assert.hasAllKeys(converters.filterByAgent(flat, ['codex']), ['everywhere']);
+    });
+
+    test('agentExclude:["*"] drops the server from every agent', () => {
+      const flat = { disabled: { command: 'a', agentExclude: ['*'] } };
+      assert.deepEqual(converters.filterByAgent(flat, ['claude']), {});
+      assert.deepEqual(converters.filterByAgent(flat, ['cursor']), {});
     });
 
     test('agentInclude limits to listed agents', () => {

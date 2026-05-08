@@ -168,7 +168,7 @@ Only files **directly inside `.mcp/`** are considered. Subdirectories are ignore
 
 #### Canonical format (flat map, no wrapper key)
 
-Author definitions and generator outputs in this shape:
+Author definitions and generator outputs as a flat map of server name to definition. **Every server must declare exactly one of `agentInclude` or `agentExclude`** — use `["*"]` to apply to every agent.
 
 ```jsonc
 {
@@ -176,39 +176,39 @@ Author definitions and generator outputs in this shape:
     "type": "stdio",
     "command": "npx",
     "args": ["-y", "@modelcontextprotocol/server-linear"],
-    "env": { "LINEAR_API_KEY": "${env:LINEAR_API_KEY}" }
+    "env": { "LINEAR_API_KEY": "${env:LINEAR_API_KEY}" },
+    "agentInclude": ["*"]
   },
   "company-internal": {
     "type": "http",
     "url": "https://mcp.example.com",
-    "headers": { "Authorization": "Bearer ${env:COMPANY_TOKEN}" }
+    "headers": { "Authorization": "Bearer ${env:COMPANY_TOKEN}" },
+    "agentExclude": ["codex"]
   }
 }
 ```
 
 The wrapper key (`mcpServers` for Claude/Cursor, `servers` for VSCode, `[mcp_servers.*]` TOML sections for Codex) is added by each agent's converter — you never write it by hand.
 
-#### Per-server agent filters
+#### Per-server agent filters (required)
 
-```jsonc
-{
-  "claude-only": {
-    "command": "npx", "args": ["..."],
-    "agentInclude": ["claude"]
-  },
-  "everywhere-but-codex": {
-    "command": "npx", "args": ["..."],
-    "agentExclude": ["codex"]
-  }
-}
-```
+Every server definition broadcast through `.mcp/` **must** include one of these keys; servers with neither are dropped (with an error logged) so it's never ambiguous which agents a server applies to.
 
-- `agentInclude`: array of agent names. If present, this server is emitted **only** to listed agents.
-- `agentExclude`: array of agent names. If present, this server is emitted to all agents **except** the listed ones.
-- **It is an error to specify both `agentInclude` and `agentExclude` on the same server.** The extension logs the error and skips that server.
-- These keys are stripped from the emitted output — they are extension metadata, not part of the MCP config each agent reads.
+| Key | Meaning |
+|-----|---------|
+| `"agentInclude": ["*"]` | Emit to every agent. Use this for the common case. |
+| `"agentInclude": ["claude", "cursor"]` | Emit only to the listed agents. |
+| `"agentExclude": ["*"]` | Skip every agent (effectively a disabled server). |
+| `"agentExclude": ["codex"]` | Emit to every agent except the listed ones. |
 
-Recognized agent names: `cursor`, `claude`, `vscode`, `codex`, plus `copilot` as an alias for the `vscode` target (GitHub Copilot in VSCode reads the same `.vscode/mcp.json`).
+Rules:
+
+- **Required**: every server must declare one of `agentInclude` or `agentExclude`. A server with neither is logged as an error and dropped from every output.
+- **Mutually exclusive**: specifying both keys on the same server is an error and drops the server.
+- **Wildcard**: `"*"` inside either array means "every agent". `agentInclude:["*"]` == always emit; `agentExclude:["*"]` == never emit.
+- **Stripped on output**: these keys are extension metadata — they're removed from the emitted config so the agent doesn't see them.
+
+Recognized agent names: `cursor`, `claude`, `vscode`, `codex`, plus `copilot` as an alias for the `vscode` target (GitHub Copilot in VSCode reads the same `.vscode/mcp.json`, so a server visible to one is visible to both).
 
 #### Output destinations
 

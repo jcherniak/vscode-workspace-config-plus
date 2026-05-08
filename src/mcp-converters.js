@@ -13,24 +13,33 @@ const _stripMetaKeys = def => {
   return clean;
 };
 
+const _hasWildcard = list => Array.isArray(list) && list.includes('*');
+
 const _intersects = (list, set) =>
   Array.isArray(list) && list.some(x => set.includes(x));
 
+// Returns:
+//   true     -> emit to this converter
+//   false    -> skip silently (filter excluded it)
+//   'conflict' -> both keys set; log error and drop
+//   'missing'  -> neither key set; log error and drop
 const _passesAgentFilter = (def, names) => {
-  if (def.agentInclude && def.agentExclude) {
-    return 'conflict';
+  const hasInclude = Array.isArray(def.agentInclude);
+  const hasExclude = Array.isArray(def.agentExclude);
+  if (hasInclude && hasExclude) return 'conflict';
+  if (!hasInclude && !hasExclude) return 'missing';
+  if (hasInclude) {
+    if (_hasWildcard(def.agentInclude)) return true;
+    return _intersects(def.agentInclude, names);
   }
-  if (Array.isArray(def.agentInclude) && !_intersects(def.agentInclude, names)) {
-    return false;
-  }
-  if (_intersects(def.agentExclude, names)) {
-    return false;
-  }
-  return true;
+  // hasExclude
+  if (_hasWildcard(def.agentExclude)) return false;
+  return !_intersects(def.agentExclude, names);
 };
 
 // agentNames is an array of names this converter answers to (e.g. ['vscode', 'copilot']
 // because Copilot reads the same .vscode/mcp.json as VSCode native).
+// eslint-disable-next-line max-statements
 const filterByAgent = (flat, agentNames) => {
   const names = Array.isArray(agentNames) ? agentNames : [agentNames];
   const out = {};
@@ -41,6 +50,13 @@ const filterByAgent = (flat, agentNames) => {
       log.error(
         `MCP server "${name}" has both agentInclude and agentExclude — skipping. ` +
           'Specify one or the other, not both.'
+      );
+      continue;
+    }
+    if (verdict === 'missing') {
+      log.error(
+        `MCP server "${name}" must declare agentInclude or agentExclude — skipping. ` +
+          'Use ["*"] to apply to all agents.'
       );
       continue;
     }

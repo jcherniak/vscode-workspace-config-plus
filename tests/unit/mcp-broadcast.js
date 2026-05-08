@@ -35,11 +35,11 @@ suite('mcp-broadcast Suite', () => {
       ]);
       const readFile = Sinon.stub();
       readFile.withArgs({ fsPath: '/w/.mcp/local.json' }).resolves(bufFromObj({
-        linear: { command: 'override' },
+        linear: { command: 'override', agentInclude: ['*'] },
       }));
       readFile.withArgs({ fsPath: '/w/.mcp/team.json' }).resolves(bufFromObj({
-        linear: { command: 'shared', args: ['x'] },
-        other: { command: 'y' },
+        linear: { command: 'shared', args: ['x'], agentInclude: ['*'] },
+        other: { command: 'y', agentInclude: ['*'] },
       }));
 
       const result = await broadcast.computeCanonical({
@@ -52,7 +52,7 @@ suite('mcp-broadcast Suite', () => {
       // local.json is pinned last so its 'override' wins; deep merge keeps args from team.json
       assert.equal(result.linear.command, 'override');
       assert.deepEqual(result.linear.args, ['x']);
-      assert.deepEqual(result.other, { command: 'y' });
+      assert.equal(result.other.command, 'y');
     });
 
     test('runs *.<priority>.js generators after JSON in priority order', async () => {
@@ -62,13 +62,13 @@ suite('mcp-broadcast Suite', () => {
         ['gen.10.js', FILE],
         ['gen.50.js', FILE],
       ]);
-      const readFile = Sinon.stub().resolves(bufFromObj({ a: { command: 'json' } }));
+      const readFile = Sinon.stub().resolves(bufFromObj({ a: { command: 'json', agentInclude: ['*'] } }));
       const runGeneratorScript = Sinon.stub();
       runGeneratorScript.withArgs('/w/.mcp/gen.10.js').resolves(JSON.stringify({
-        a: { command: 'gen10', args: ['p10'] },
+        a: { command: 'gen10', args: ['p10'], agentInclude: ['*'] },
       }));
       runGeneratorScript.withArgs('/w/.mcp/gen.50.js').resolves(JSON.stringify({
-        a: { command: 'gen50' },
+        a: { command: 'gen50', agentInclude: ['*'] },
       }));
 
       const result = await broadcast.computeCanonical({
@@ -177,7 +177,7 @@ suite('mcp-broadcast Suite', () => {
       const readFile = Sinon.stub();
       // .mcp/ canonical
       readFile.withArgs({ fsPath: '/w/.mcp/team.json' }).resolves(bufFromObj({
-        linear: { command: 'canonical' },
+        linear: { command: 'canonical', agentInclude: ['*'] },
       }));
       // .cursor overlay overrides 'linear' for cursor only
       readFile.withArgs({ fsPath: '/w/.cursor/mcp.shared.json' }).resolves(
