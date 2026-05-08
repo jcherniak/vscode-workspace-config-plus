@@ -29,35 +29,40 @@ const writeFile = (fileUri, contents, options) =>
 const stat = fileUri => workspace.fs.stat(fileUri);
 const readDirectory = fileUri =>
   workspace.fs.readDirectory(fileUri).then(entries => entries, () => []);
+const showWarningMessage = (message, ...items) =>
+  window.showWarningMessage(message, ...items);
+const getConfiguration = (section, scope) =>
+  workspace.getConfiguration(section, scope);
 
-const activate = () => {
+const activate = context => {
   if (!workspace.workspaceFolders) {
     return;
   }
   initializeLog(name => window.createOutputChannel(name));
+  const workspaceState = context && context.workspaceState;
+  const sharedCallbacks = {
+    createFileSystemWatcher,
+    createRelativePattern,
+    joinPath,
+    readFile,
+    writeFile,
+    stat,
+    readDirectory,
+    showWarningMessage,
+    workspaceState,
+    getConfiguration,
+  };
   workspace.workspaceFolders.forEach(f =>
     initializeWorkspaceFolder({
       folderUri: f.uri,
-      createFileSystemWatcher,
-      createRelativePattern,
-      joinPath,
-      readFile,
-      writeFile,
-      stat,
-      readDirectory,
+      ...sharedCallbacks,
     })
   );
   workspace.onDidChangeWorkspaceFolders(({ added, removed }) =>
     handleWorkspaceFolderUpdates({
       added,
       removed,
-      createFileSystemWatcher,
-      createRelativePattern,
-      joinPath,
-      readFile,
-      writeFile,
-      stat,
-      readDirectory,
+      ...sharedCallbacks,
     })
   );
 };

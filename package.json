@@ -3,7 +3,7 @@
   "displayName": "Workspace Config+",
   "description": "VS Code extension for improved workspace configuration",
   "main": "src/index.js",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "MIT",
   "preview": true,
   "private": true,
@@ -28,7 +28,8 @@
           "tasks.local.json",
           "tasks.shared.json",
           "mcp.local.json",
-          "mcp.shared.json"
+          "mcp.shared.json",
+          "settings.personal.json"
         ]
       }
     ],
@@ -91,6 +92,20 @@
             "Performs a deep merge of array-type properties overlapping in both local and shared user settings, where the arrays are combined",
             "If both the local and shared files define a value for the same array-type property, then the array value in the local file is used and the shared array value is ignored"
           ]
+        },
+        "workspaceConfigPlus.gitignoreWarning": {
+          "description": "Controls whether Workspace Config+ shows a warning dialog when about to write a merged output file that is not gitignored",
+          "type": "string",
+          "scope": "resource",
+          "default": "prompt",
+          "enum": [
+            "prompt",
+            "silent"
+          ],
+          "enumDescriptions": [
+            "Show a one-time, dismissible warning dialog with options to add the file to .gitignore",
+            "Never show the warning dialog (advanced users who manage .gitignore manually)"
+          ]
         }
       }
     }
@@ -150,8 +165,9 @@
     "vsce": "^2.15.0"
   },
   "dependencies": {
-    "jsonc-parser": "^3.2.0",
-    "deepmerge": "^4.3.1"
+    "deepmerge": "^4.3.1",
+    "ignore": "^5.3.2",
+    "jsonc-parser": "^3.2.0"
   },
   "scripts": {
     "build": "npm test",

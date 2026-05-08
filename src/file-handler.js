@@ -6,6 +6,7 @@ const deepMerge = require('deepmerge');
 const log = require('./log');
 const discovery = require('./generator-discovery');
 const { runGeneratorScript: defaultRunGeneratorScript } = require('./generator-runner');
+const gitignoreCheck = require('./gitignore-check');
 
 const _arrayMergeKey = 'workspaceConfigPlus.arrayMerge';
 const _arrayMergeDefaultValue = 'combine';
@@ -136,6 +137,9 @@ const mergeConfigFiles = async ({
   configFileBaseName,
   readDirectory,
   runGeneratorScript,
+  showWarningMessage,
+  workspaceState,
+  getConfiguration,
 }) => {
   const loadConfigFromFile = module.exports._loadConfigFromFile;
   try {
@@ -209,11 +213,31 @@ const mergeConfigFiles = async ({
     }
 
     log.info(`Updating config in ${vscodeFileUri.fsPath}`);
-    await writeFile(
+
+    const writePromise = writeFile(
       vscodeFileUri,
       Buffer.from(JSON.stringify({ ...vscodeFileContents, ...merged }, null, 2)),
       { create: true, overwrite: true }
     );
+
+    if (workspaceFolderUri && typeof showWarningMessage === 'function') {
+      gitignoreCheck
+        .warnIfTargetNotIgnored({
+          workspaceRootUri: workspaceFolderUri,
+          targetFileUri: vscodeFileUri,
+          readFile,
+          writeFile,
+          joinPath,
+          showWarningMessage,
+          workspaceState,
+          getConfiguration,
+        })
+        .catch(e => {
+          log.debug(`gitignore-check failed: ${e.message}`);
+        });
+    }
+
+    await writePromise;
   } catch (e) {
     log.error(e.message);
     log.debug(e);

@@ -60,6 +60,35 @@ const mcpCursorFileUri = { uri: 'foo/.cursor/mcp.json', fsPath: 'foo/.cursor/mcp
 const mcpCursorSharedUri = { uri: 'foo/.cursor/mcp.shared.json', fsPath: 'foo/.cursor/mcp.shared.json' };
 const mcpCursorLocalUri = { uri: 'foo/.cursor/mcp.local.json', fsPath: 'foo/.cursor/mcp.local.json' };
 
+// --- AI tool config dir URIs (.claude / .codex / .gemini) ---
+const claudeDirUri = { uri: 'foo/.claude', fsPath: 'foo/.claude' };
+const codexDirUri = { uri: 'foo/.codex', fsPath: 'foo/.codex' };
+const geminiDirUri = { uri: 'foo/.gemini', fsPath: 'foo/.gemini' };
+
+const makeBaseUris = (dirPath, base) => ({
+  fileUri: { uri: `${dirPath}/${base}.json`, fsPath: `${dirPath}/${base}.json` },
+  sharedUri: { uri: `${dirPath}/${base}.shared.json`, fsPath: `${dirPath}/${base}.shared.json` },
+  localUri: { uri: `${dirPath}/${base}.local.json`, fsPath: `${dirPath}/${base}.local.json` },
+});
+
+const settingsClaude = makeBaseUris('foo/.claude', 'settings');
+settingsClaude.personalUri = { uri: 'foo/.claude/settings.personal.json', fsPath: 'foo/.claude/settings.personal.json' };
+const launchClaude = makeBaseUris('foo/.claude', 'launch');
+const tasksClaude = makeBaseUris('foo/.claude', 'tasks');
+const mcpClaude = makeBaseUris('foo/.claude', 'mcp');
+const workspaceMcpFileUri = { uri: 'foo/.mcp.json', fsPath: 'foo/.mcp.json' };
+const workspaceGitignoreUri = { uri: 'foo/.gitignore', fsPath: 'foo/.gitignore' };
+
+const settingsCodex = makeBaseUris('foo/.codex', 'settings');
+const launchCodex = makeBaseUris('foo/.codex', 'launch');
+const tasksCodex = makeBaseUris('foo/.codex', 'tasks');
+const mcpCodex = makeBaseUris('foo/.codex', 'mcp');
+
+const settingsGemini = makeBaseUris('foo/.gemini', 'settings');
+const launchGemini = makeBaseUris('foo/.gemini', 'launch');
+const tasksGemini = makeBaseUris('foo/.gemini', 'tasks');
+const mcpGemini = makeBaseUris('foo/.gemini', 'mcp');
+
 // --- Legacy/Simplified URIs (keep for now if needed by other tests) ---
 const vscodeFileUri = settingsVscodeFileUri; // Alias for potential backward compat
 const sharedFileUri = settingsVscodeSharedUri;
@@ -90,4 +119,9 @@ module.exports = {
   launchCursorFileUri, launchCursorSharedUri, launchCursorLocalUri,
   tasksCursorFileUri, tasksCursorSharedUri, tasksCursorLocalUri,
   mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri,
+  claudeDirUri, codexDirUri, geminiDirUri,
+  settingsClaude, launchClaude, tasksClaude, mcpClaude,
+  settingsCodex, launchCodex, tasksCodex, mcpCodex,
+  settingsGemini, launchGemini, tasksGemini, mcpGemini,
+  workspaceMcpFileUri, workspaceGitignoreUri,
 };

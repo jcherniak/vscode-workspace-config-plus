@@ -18,6 +18,8 @@ const {
   launchCursorFileUri, launchCursorSharedUri, launchCursorLocalUri,
   tasksCursorFileUri, tasksCursorSharedUri, tasksCursorLocalUri,
   mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri,
+  claudeDirUri, codexDirUri, geminiDirUri,
+  settingsClaude, mcpClaude, workspaceMcpFileUri,
 } = require('../data');
 const watcher = require('../../src/watcher');
 
@@ -45,9 +47,15 @@ suite('lib Suite', () => {
 
     statStub.withArgs(cursorDirUri).resolves({ type: 2 });
     statStub.withArgs(vscodeDirUri).resolves({ type: 2 });
+    statStub.withArgs(claudeDirUri).rejects({ code: 'ENOENT' });
+    statStub.withArgs(codexDirUri).rejects({ code: 'ENOENT' });
+    statStub.withArgs(geminiDirUri).rejects({ code: 'ENOENT' });
 
     joinPathStub.withArgs(testFolderUri, '.vscode').returns(vscodeDirUri);
     joinPathStub.withArgs(testFolderUri, '.cursor').returns(cursorDirUri);
+    joinPathStub.withArgs(testFolderUri, '.claude').returns(claudeDirUri);
+    joinPathStub.withArgs(testFolderUri, '.codex').returns(codexDirUri);
+    joinPathStub.withArgs(testFolderUri, '.gemini').returns(geminiDirUri);
   });
 
   teardown(() => {
@@ -317,6 +325,83 @@ suite('lib Suite', () => {
       assertGenerateWatcherCall(pattern, testFolderUri, cursorDirUri, 'settings', settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri);
       assertMergeFilesCall(settingsCursorFileUri, settingsCursorSharedUri, settingsCursorLocalUri, cursorDirUri, 'settings');
       Sinon.assert.calledWith(logInfoStub, `Using configuration directory: ${cursorDirUri.fsPath}`);
+    });
+
+    suite('.claude special-casing', () => {
+      setup(() => {
+        statStub.withArgs(cursorDirUri).rejects({ code: 'ENOENT' });
+        statStub.withArgs(vscodeDirUri).rejects({ code: 'ENOENT' });
+        statStub.withArgs(claudeDirUri).resolves({ type: 2 });
+      });
+
+      test('settings: maps shared+personal -> .claude/settings.local.json', async () => {
+        joinPathStub.withArgs(claudeDirUri, 'settings.shared.json').returns(settingsClaude.sharedUri);
+        joinPathStub.withArgs(claudeDirUri, 'settings.personal.json').returns(settingsClaude.personalUri);
+        joinPathStub.withArgs(claudeDirUri, 'settings.local.json').returns(settingsClaude.localUri);
+        const pattern = { pattern: 'claude-settings-pattern' };
+        createRelativePatternStub
+          .withArgs(claudeDirUri, '{settings.personal.json,settings.shared.json,settings.generator.*.*.js}')
+          .returns(pattern);
+
+        await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
+
+        Sinon.assert.calledWithMatch(
+          generateFileSystemWatcherStub,
+          {
+            globPattern: pattern,
+            mergeArgs: Sinon.match(
+              m =>
+                m.vscodeFileUri === settingsClaude.localUri &&
+                m.sharedFileUri === settingsClaude.sharedUri &&
+                m.localFileUri === settingsClaude.personalUri &&
+                m.configDirUri === claudeDirUri &&
+                m.configFileBaseName === 'settings'
+            ),
+          }
+        );
+      });
+
+      test('mcp: maps shared+local -> workspace-root /.mcp.json', async () => {
+        joinPathStub.withArgs(claudeDirUri, 'mcp.shared.json').returns(mcpClaude.sharedUri);
+        joinPathStub.withArgs(claudeDirUri, 'mcp.local.json').returns(mcpClaude.localUri);
+        joinPathStub.withArgs(testFolderUri, '.mcp.json').returns(workspaceMcpFileUri);
+        const pattern = { pattern: 'claude-mcp-pattern' };
+        createRelativePatternStub
+          .withArgs(claudeDirUri, '{mcp.local.json,mcp.shared.json,mcp.generator.*.*.js}')
+          .returns(pattern);
+
+        await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
+
+        Sinon.assert.calledWithMatch(
+          generateFileSystemWatcherStub,
+          {
+            globPattern: pattern,
+            mergeArgs: Sinon.match(
+              m =>
+                m.vscodeFileUri === workspaceMcpFileUri &&
+                m.sharedFileUri === mcpClaude.sharedUri &&
+                m.localFileUri === mcpClaude.localUri &&
+                m.configDirUri === claudeDirUri &&
+                m.configFileBaseName === 'mcp'
+            ),
+          }
+        );
+      });
+
+      test('launch and tasks are skipped (no watcher, no merge)', async () => {
+        joinPathStub.withArgs(claudeDirUri, 'settings.shared.json').returns(settingsClaude.sharedUri);
+        joinPathStub.withArgs(claudeDirUri, 'settings.personal.json').returns(settingsClaude.personalUri);
+        joinPathStub.withArgs(claudeDirUri, 'settings.local.json').returns(settingsClaude.localUri);
+        joinPathStub.withArgs(claudeDirUri, 'mcp.shared.json').returns(mcpClaude.sharedUri);
+        joinPathStub.withArgs(claudeDirUri, 'mcp.local.json').returns(mcpClaude.localUri);
+        joinPathStub.withArgs(testFolderUri, '.mcp.json').returns(workspaceMcpFileUri);
+        createRelativePatternStub.returns({ pattern: 'p' });
+
+        await lib.initializeWorkspaceFolder({ folderUri: testFolderUri, ...callbacks });
+
+        const baseNames = mergeConfigFilesStub.getCalls().map(c => c.args[0].configFileBaseName);
+        assert.deepEqual(baseNames.sort(), ['mcp', 'settings']);
+      });
     });
   });
 });
