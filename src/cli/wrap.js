@@ -6,7 +6,13 @@ const { spawn } = require('node:child_process');
 const log = require('../log');
 const { runCommand, VALID_TARGETS } = require('./run');
 
-const WRAPPABLE_AGENTS = ['codex', 'gemini'];
+// Agents whose binary `wcp wrap <agent> --` knows how to invoke. Claude is
+// included here because Claude's SessionStart hook fires AFTER MCP discovery
+// during bootstrap — so a hook-only setup would only refresh the *next*
+// session's .mcp.json, not the current one. Wrapping ensures the broadcast
+// runs before claude reads its config, so the current session sees fresh
+// content.
+const WRAPPABLE_AGENTS = ['codex', 'gemini', 'claude'];
 
 // Find the real binary on PATH, skipping any path that looks like the wcp
 // wrapper itself (e.g. ~/.local/bin/wcp-codex pointing at the wcp bundle).

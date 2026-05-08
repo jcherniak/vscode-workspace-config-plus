@@ -323,14 +323,23 @@ wcp migrate [--root <path>]
 
 | Agent | Reload mechanism | Recommended setup |
 |-------|------------------|-------------------|
-| **Claude Code** | `SessionStart` hook | Add the snippet below to `.claude/settings.json`. |
+| **Claude Code** | Reads config at session bootstrap | `alias claude='wcp wrap claude --'` (recommended). The `SessionStart` hook below is a useful fallback for non-aliased launches but does NOT refresh the *current* session — Claude loads MCP before the hook completes. |
 | **Cursor** | Auto-reload on file change | The VSCode extension covers this. CLI is the manual fallback. |
 | **VSCode** | Auto-reload on file change | Same — extension is the primary path. |
 | **Codex CLI** | Reads config at startup | `alias codex='wcp wrap codex --'` |
 | **Gemini CLI** | Reads config at startup | `alias gemini='wcp wrap gemini --'` |
 | GitHub Copilot CLI | Global `~/.copilot/mcp-config.json` | Out of scope — manage manually. |
 
-##### Claude SessionStart hook
+##### Claude wrapper alias (recommended)
+
+```bash
+# In ~/.bashrc or ~/.zshrc:
+alias claude='wcp wrap claude --'
+```
+
+`wcp wrap claude` runs a scoped broadcast (`--target claude`) before exec'ing the real `claude` binary, so the current session sees an up-to-date `<root>/.mcp.json`. The `--` lets Claude flags pass through unambiguously.
+
+##### Claude SessionStart hook (fallback)
 
 ```jsonc
 // .claude/settings.json (or .claude/settings.local.json)
@@ -348,7 +357,7 @@ wcp migrate [--root <path>]
 }
 ```
 
-The `--target claude` is what scopes the broadcast to writing only `<root>/.mcp.json` — Cursor/VSCode/Codex outputs are skipped on this code path. `--silent` suppresses non-error output so the session-start log stays clean.
+This refreshes `<root>/.mcp.json` for the **next** session. Claude reads MCP servers during session bootstrap *before* the `SessionStart` hook completes, so the hook's write doesn't apply to the current session. Use the wrapper alias above if you need current-session freshness; the hook is a fallback for launches that bypass the alias (CI, scripts, IDE buttons).
 
 ##### Codex/Gemini wrapper aliases
 

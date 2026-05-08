@@ -20,10 +20,12 @@ Usage:
       agent. Hooks/wrappers should always set --target and --silent.
 
   wcp wrap <agent> -- <agent args>
-      Wrapper trampoline for codex / gemini. Runs a scoped broadcast for
-      the given agent, then execs the real agent binary with the
-      remaining args. Skips any binary whose real path matches the wcp
-      wrapper itself.
+      Wrapper trampoline for claude / codex / gemini. Runs a scoped
+      broadcast for the given agent, then execs the real agent binary
+      with the remaining args. Skips any binary whose real path matches
+      the wcp wrapper itself. Wrapping is required for claude because
+      SessionStart hooks fire AFTER MCP discovery; wrapping refreshes
+      .mcp.json before claude bootstraps.
 
   wcp migrate [--root <path>]
       Interactive migration from legacy per-tool MCP files into .mcp/.
@@ -41,6 +43,8 @@ Flags:
 Examples:
   wcp run                                # broadcast to every detected agent
   wcp run --target claude --silent       # what Claude SessionStart hook calls
+  alias claude='wcp wrap claude --'      # refresh .mcp.json before claude
+                                         #  reads it (current-session fix)
   alias codex='wcp wrap codex --'        # transparent wrapper
   wcp migrate                            # interactive migration prompt
 `;

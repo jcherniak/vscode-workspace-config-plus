@@ -221,7 +221,10 @@ suite('CLI Suite', () => {
     });
 
     test('WRAPPABLE_AGENTS is the documented set', () => {
-      assert.deepEqual(WRAPPABLE_AGENTS, ['codex', 'gemini']);
+      // claude is included because SessionStart hooks fire after MCP load,
+      // so wrapping is the only way to refresh .mcp.json for the current
+      // session.
+      assert.deepEqual(WRAPPABLE_AGENTS, ['codex', 'gemini', 'claude']);
     });
   });
 });

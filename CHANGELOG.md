@@ -2,6 +2,7 @@
 
 ## v1.3.0
 
+- **`wcp wrap claude` is now supported** (`claude` joins `codex` and `gemini` in `WRAPPABLE_AGENTS`). Claude's `SessionStart` hook fires *after* MCP discovery during session bootstrap, so a hook-only setup only refreshes the *next* session's `.mcp.json`. The wrapper runs the broadcast before exec'ing the real `claude` binary, ensuring the current session sees fresh content. Recommended setup: `alias claude='wcp wrap claude --'`. The SessionStart hook remains useful as a fallback for non-aliased launches (CI, IDE buttons, scripts).
 - **`.mcp/wcp-config.json` explicit opt-in for broadcast targets**: a new per-workspace file lets you control which agents the broadcast actually writes to, instead of "any agent dir we happen to detect". Schema:
   ```json
   { "agents": ["claude", "cursor"] }
