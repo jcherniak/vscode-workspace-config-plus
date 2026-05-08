@@ -18,7 +18,7 @@ const {
   launchCursorFileUri, launchCursorSharedUri, launchCursorLocalUri,
   tasksCursorFileUri, tasksCursorSharedUri, tasksCursorLocalUri,
   mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri,
-  claudeDirUri, codexDirUri, geminiDirUri,
+  claudeDirUri, codexDirUri, geminiDirUri, sharedMcpDirUri,
   settingsClaude, mcpClaude, workspaceMcpFileUri,
 } = require('../data');
 const watcher = require('../../src/watcher');
@@ -50,12 +50,14 @@ suite('lib Suite', () => {
     statStub.withArgs(claudeDirUri).rejects({ code: 'ENOENT' });
     statStub.withArgs(codexDirUri).rejects({ code: 'ENOENT' });
     statStub.withArgs(geminiDirUri).rejects({ code: 'ENOENT' });
+    statStub.withArgs(sharedMcpDirUri).rejects({ code: 'ENOENT' });
 
     joinPathStub.withArgs(testFolderUri, '.vscode').returns(vscodeDirUri);
     joinPathStub.withArgs(testFolderUri, '.cursor').returns(cursorDirUri);
     joinPathStub.withArgs(testFolderUri, '.claude').returns(claudeDirUri);
     joinPathStub.withArgs(testFolderUri, '.codex').returns(codexDirUri);
     joinPathStub.withArgs(testFolderUri, '.gemini').returns(geminiDirUri);
+    joinPathStub.withArgs(testFolderUri, '.mcp').returns(sharedMcpDirUri);
   });
 
   teardown(() => {

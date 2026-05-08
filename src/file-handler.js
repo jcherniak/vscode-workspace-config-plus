@@ -7,6 +7,7 @@ const log = require('./log');
 const discovery = require('./generator-discovery');
 const { runGeneratorScript: defaultRunGeneratorScript } = require('./generator-runner');
 const gitignoreCheck = require('./gitignore-check');
+const mcpBroadcast = require('./mcp-broadcast');
 
 const _arrayMergeKey = 'workspaceConfigPlus.arrayMerge';
 const _arrayMergeDefaultValue = 'combine';
@@ -125,22 +126,28 @@ const _readGeneratorDirectorySafe = async (readDirectory, configDirUri) => {
 };
 
 // eslint-disable-next-line max-statements, complexity
-const mergeConfigFiles = async ({
-  vscodeFileUri,
-  sharedFileUri,
-  localFileUri,
-  readFile,
-  writeFile,
-  joinPath,
-  workspaceFolderUri,
-  configDirUri,
-  configFileBaseName,
-  readDirectory,
-  runGeneratorScript,
-  showWarningMessage,
-  workspaceState,
-  getConfiguration,
-}) => {
+const mergeConfigFiles = async args => {
+  // Broadcast dispatch: when wired by lib.js for the shared .mcp/ directory,
+  // re-broadcast across all agents instead of running the per-tool single-target merge.
+  if (args && args._broadcast) {
+    return mcpBroadcast.broadcastMcpToAllAgents(args);
+  }
+  const {
+    vscodeFileUri,
+    sharedFileUri,
+    localFileUri,
+    readFile,
+    writeFile,
+    joinPath,
+    workspaceFolderUri,
+    configDirUri,
+    configFileBaseName,
+    readDirectory,
+    runGeneratorScript,
+    showWarningMessage,
+    workspaceState,
+    getConfiguration,
+  } = args || {};
   const loadConfigFromFile = module.exports._loadConfigFromFile;
   try {
     const generatorCapable = _canEnumerateGenerators({

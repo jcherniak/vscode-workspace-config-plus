@@ -149,7 +149,92 @@ However, if you change the value of the setting to `overwrite`, then the overlap
 }
 ```
 
-#### Limitations
+### Shared MCP Definitions across all agents (`.mcp/`)
+
+If you use multiple AI agents (Cursor, Claude, VSCode/Copilot, Codex), each one expects its MCP server configuration in a different file with a slightly different schema. Maintaining the same server definition in 3-4 places drifts.
+
+Drop a `.mcp/` directory at the workspace root. Workspace Config+ watches it, merges its contents, and broadcasts the result to every agent's expected MCP file with per-agent format conversion.
+
+#### Discovery (non-recursive)
+
+Only files **directly inside `.mcp/`** are considered. Subdirectories are ignored — put helper modules and shared utilities for your generators inside `.mcp/lib/` or any subfolder and they will not be treated as definitions or generators.
+
+| Pattern | Role |
+|---------|------|
+| `*.json` (top-level) | **Definition file** — flat map of `serverName → serverDef`. Multiple files allowed (e.g. `team.json`, `infra.json`). Merged in alphabetical filename order. |
+| `local.json` (top-level) | **Personal override** — pinned to merge last so it always wins. Conventionally gitignored. |
+| `<name>.<priority>.js` (top-level) | **Generator** — Node script printing canonical-shape JSON to stdout. Runs after JSON definitions in priority order (lower priority first; later overrides earlier). |
+| `*.js` without `<priority>` segment | Ignored — usable as `require()` targets from generators. |
+
+#### Canonical format (flat map, no wrapper key)
+
+Author definitions and generator outputs in this shape:
+
+```jsonc
+{
+  "linear": {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-linear"],
+    "env": { "LINEAR_API_KEY": "${env:LINEAR_API_KEY}" }
+  },
+  "company-internal": {
+    "type": "http",
+    "url": "https://mcp.example.com",
+    "headers": { "Authorization": "Bearer ${env:COMPANY_TOKEN}" }
+  }
+}
+```
+
+The wrapper key (`mcpServers` for Claude/Cursor, `servers` for VSCode, `[mcp_servers.*]` TOML sections for Codex) is added by each agent's converter — you never write it by hand.
+
+#### Per-server agent filters
+
+```jsonc
+{
+  "claude-only": {
+    "command": "npx", "args": ["..."],
+    "agentInclude": ["claude"]
+  },
+  "everywhere-but-codex": {
+    "command": "npx", "args": ["..."],
+    "agentExclude": ["codex"]
+  }
+}
+```
+
+- `agentInclude`: array of agent names. If present, this server is emitted **only** to listed agents.
+- `agentExclude`: array of agent names. If present, this server is emitted to all agents **except** the listed ones.
+- **It is an error to specify both `agentInclude` and `agentExclude` on the same server.** The extension logs the error and skips that server.
+- These keys are stripped from the emitted output — they are extension metadata, not part of the MCP config each agent reads.
+
+Recognized agent names: `cursor`, `claude`, `vscode`, `codex`, plus `copilot` as an alias for the `vscode` target (GitHub Copilot in VSCode reads the same `.vscode/mcp.json`).
+
+#### Output destinations
+
+| Agent | Output file | Wrapper / format |
+|-------|-------------|------------------|
+| Cursor | `.cursor/mcp.json` | `{ "mcpServers": { ... } }` |
+| Claude | `<workspace_root>/.mcp.json` | `{ "mcpServers": { ... } }` |
+| VSCode (& Copilot) | `.vscode/mcp.json` | `{ "servers": { ... } }` |
+| Codex | `.codex/config.toml` | `[mcp_servers.<name>]` TOML sections (other TOML keys preserved) |
+
+A target is only written if its config directory exists in the workspace (e.g. `.cursor/` for Cursor). Codex's `config.toml` is **section-merged** — non-MCP keys like `model` and `approval_policy` survive untouched.
+
+You can opt out of any target via the `workspaceConfigPlus.mcp.broadcast.targets` setting (default: all four).
+
+#### Per-tool overlays
+
+The existing per-tool config files (`.cursor/mcp.shared.json`, `.claude/mcp.shared.json`, etc.) still work — they're treated as **overlays on top of the canonical `.mcp/` content** for that tool only. Tool-specific overlay wins on name collision. Unwrapping is lenient: the extension reads either `{ "mcpServers": { ... } }` or the flat form.
+
+When `.mcp/` exists, the broadcast pipeline owns every per-tool MCP output and supersedes the previous per-tool merge behavior. When `.mcp/` is absent, per-tool merging works exactly as before.
+
+#### Codex caveats
+
+- Output goes to `.codex/config.toml` at the workspace root. Project-scoped config requires a recent Codex CLI version that reads project-level `.codex/`. The extension does **not** write `~/.codex/config.toml` (the user-level Codex config) — that's intentional.
+- HTTP/SSE server schemas in Codex TOML are less standardized than stdio. The converter writes canonical fields verbatim; stdio is the well-supported case.
+
+### Limitations
 
 All configuration setting values are ultimately stored and persisted in the native workspace configuration files (e.g. `.vscode/settings.json`, `.cursor/mcp.json`). However, because these features are added via an extension there are some associated limitations and accordingly we'd strongly advise against manually modifying those native files when using the extension, and instead advise managing your configuration in the shared/local files.
 
@@ -169,7 +254,7 @@ All configuration setting values are ultimately stored and persisted in the nati
 [vscode-settings-sync]: https://code.visualstudio.com/docs/editor/settings-sync
 [settings-sync-ext]: https://marketplace.visualstudio.com/items?itemName=Shan.code-settings-sync
 
-#### Background
+### Background
 
 VS Code is highly configurable, and allows you to [configure specific workspaces in addition to your global user settings.]([vscode-settings-docs]). This includes things like general settings, such as the zoom level, as well as [tasks and launch configurations] amongst others. These configurations are stored in various respective files within the `.vscode` directory (or `.cursor` for Cursor users) in the workspace. For example, the workspace task configuration is stored in `.vscode/tasks.json`.
 

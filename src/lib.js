@@ -3,9 +3,11 @@
 const fileHandler = require('./file-handler');
 const watcher = require('./watcher');
 const log = require('./log');
+const mcpBroadcast = require('./mcp-broadcast');
 
 const workspaceConfigFileNames = ['launch', 'settings', 'tasks', 'mcp'];
 const configDirPreference = ['.cursor', '.vscode', '.claude', '.codex', '.gemini'];
+const SHARED_MCP_DIR = '.mcp';
 
 // Sparse override of the default `<base>.{shared,local}.json -> <base>.json` mapping.
 // Missing key => default behavior. Explicit `null` => skip this base in this dir entirely.
@@ -59,6 +61,62 @@ const resolveBaseFiles = (dirName, base) => {
   };
 };
 
+const _setupSharedMcpBroadcast = ({
+  folderUri,
+  mcpDirUri,
+  createFileSystemWatcher,
+  createRelativePattern,
+  joinPath,
+  readFile,
+  writeFile,
+  stat,
+  readDirectory,
+  showWarningMessage,
+  workspaceState,
+  getConfiguration,
+}) => {
+  log.info(`Using shared MCP directory: ${mcpDirUri.fsPath}`);
+
+  const broadcastArgs = {
+    folderUri, // watcher uses this as a disposable key
+    workspaceFolderUri: folderUri,
+    mcpDirUri,
+    joinPath,
+    readFile,
+    writeFile,
+    readDirectory,
+    stat,
+    showWarningMessage,
+    workspaceState,
+    getConfiguration,
+  };
+
+  // Watch .mcp/ for any *.json or *.js change.
+  const mcpGlob = createRelativePattern(mcpDirUri, '*.{json,js}');
+  watcher.generateFileSystemWatcher({
+    globPattern: mcpGlob,
+    createFileSystemWatcher,
+    mergeArgs: { ...broadcastArgs, _broadcast: true },
+  });
+
+  // Also watch each per-tool overlay dir for mcp.* changes so overlay edits re-broadcast.
+  for (const dirName of configDirPreference) {
+    const overlayDir = joinPath(folderUri, dirName);
+    const overlayGlob = createRelativePattern(
+      overlayDir,
+      '{mcp.shared.json,mcp.local.json,mcp.generator.*.*.js}'
+    );
+    watcher.generateFileSystemWatcher({
+      globPattern: overlayGlob,
+      createFileSystemWatcher,
+      mergeArgs: { ...broadcastArgs, _broadcast: true },
+    });
+  }
+
+  // Initial broadcast.
+  mcpBroadcast.broadcastMcpToAllAgents(broadcastArgs);
+};
+
 // eslint-disable-next-line max-statements, complexity
 const initializeWorkspaceFolder = async ({
   folderUri,
@@ -75,6 +133,28 @@ const initializeWorkspaceFolder = async ({
 }) => {
   let foundAnyConfigDir = false;
 
+  // Check for shared .mcp/ first; if present it OWNS all MCP outputs and the
+  // per-tool mcp merges in the loop below are skipped.
+  const mcpDirUri = joinPath(folderUri, SHARED_MCP_DIR);
+  const sharedMcpEnabled = await directoryExists(mcpDirUri, stat);
+  if (sharedMcpEnabled) {
+    foundAnyConfigDir = true;
+    _setupSharedMcpBroadcast({
+      folderUri,
+      mcpDirUri,
+      createFileSystemWatcher,
+      createRelativePattern,
+      joinPath,
+      readFile,
+      writeFile,
+      stat,
+      readDirectory,
+      showWarningMessage,
+      workspaceState,
+      getConfiguration,
+    });
+  }
+
   for (const dirName of configDirPreference) {
     const dirUri = joinPath(folderUri, dirName);
     if (!(await directoryExists(dirUri, stat))) {
@@ -87,6 +167,10 @@ const initializeWorkspaceFolder = async ({
 
     // eslint-disable-next-line max-statements
     workspaceConfigFileNames.forEach(configFileBaseName => {
+      // When .mcp/ is present, the broadcast pipeline owns every per-tool MCP output.
+      if (sharedMcpEnabled && configFileBaseName === 'mcp') {
+        return;
+      }
       const resolved = resolveBaseFiles(dirName, configFileBaseName);
       if (resolved === null) {
         return;
@@ -137,7 +221,7 @@ const initializeWorkspaceFolder = async ({
   }
 
   if (!foundAnyConfigDir) {
-    log.info(`No configuration directory found in ${folderUri.fsPath} (checked: ${configDirPreference.join(', ')})`);
+    log.info(`No configuration directory found in ${folderUri.fsPath} (checked: ${SHARED_MCP_DIR}, ${configDirPreference.join(', ')})`);
   }
 };
 

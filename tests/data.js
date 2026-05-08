@@ -60,10 +60,11 @@ const mcpCursorFileUri = { uri: 'foo/.cursor/mcp.json', fsPath: 'foo/.cursor/mcp
 const mcpCursorSharedUri = { uri: 'foo/.cursor/mcp.shared.json', fsPath: 'foo/.cursor/mcp.shared.json' };
 const mcpCursorLocalUri = { uri: 'foo/.cursor/mcp.local.json', fsPath: 'foo/.cursor/mcp.local.json' };
 
-// --- AI tool config dir URIs (.claude / .codex / .gemini) ---
+// --- AI tool config dir URIs (.claude / .codex / .gemini / .mcp) ---
 const claudeDirUri = { uri: 'foo/.claude', fsPath: 'foo/.claude' };
 const codexDirUri = { uri: 'foo/.codex', fsPath: 'foo/.codex' };
 const geminiDirUri = { uri: 'foo/.gemini', fsPath: 'foo/.gemini' };
+const sharedMcpDirUri = { uri: 'foo/.mcp', fsPath: 'foo/.mcp' };
 
 const makeBaseUris = (dirPath, base) => ({
   fileUri: { uri: `${dirPath}/${base}.json`, fsPath: `${dirPath}/${base}.json` },
@@ -119,7 +120,7 @@ module.exports = {
   launchCursorFileUri, launchCursorSharedUri, launchCursorLocalUri,
   tasksCursorFileUri, tasksCursorSharedUri, tasksCursorLocalUri,
   mcpCursorFileUri, mcpCursorSharedUri, mcpCursorLocalUri,
-  claudeDirUri, codexDirUri, geminiDirUri,
+  claudeDirUri, codexDirUri, geminiDirUri, sharedMcpDirUri,
   settingsClaude, launchClaude, tasksClaude, mcpClaude,
   settingsCodex, launchCodex, tasksCodex, mcpCodex,
   settingsGemini, launchGemini, tasksGemini, mcpGemini,
