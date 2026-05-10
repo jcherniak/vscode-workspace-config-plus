@@ -149,232 +149,6 @@ However, if you change the value of the setting to `overwrite`, then the overlap
 }
 ```
 
-### Shared MCP Definitions across all agents (`.mcp/`)
-
-If you use multiple AI agents (Cursor, Claude, VSCode/Copilot, Codex), each one expects its MCP server configuration in a different file with a slightly different schema. Maintaining the same server definition in 3-4 places drifts.
-
-Drop a `.mcp/` directory at the workspace root. Workspace Config+ watches it, merges its contents, and broadcasts the result to every agent's expected MCP file with per-agent format conversion.
-
-#### Discovery (non-recursive)
-
-Only files **directly inside `.mcp/`** are considered. Subdirectories are ignored — put helper modules and shared utilities for your generators inside `.mcp/lib/` or any subfolder and they will not be treated as definitions or generators.
-
-| Pattern | Role |
-|---------|------|
-| `*.json` (top-level) | **Definition file** — flat map of `serverName → serverDef`. Multiple files allowed (e.g. `team.json`, `infra.json`). Merged in alphabetical filename order. |
-| `local.json` (top-level) | **Personal override** — pinned to merge last so it always wins. Conventionally gitignored. |
-| `<name>.<priority>.js` (top-level) | **Generator** — Node script printing canonical-shape JSON to stdout. Runs after JSON definitions in priority order (lower priority first; later overrides earlier). |
-| `*.js` without `<priority>` segment | Ignored — usable as `require()` targets from generators. |
-
-#### Canonical format (flat map, no wrapper key)
-
-Author definitions and generator outputs as a flat map of server name to definition. **Every server must declare exactly one of `agentInclude` or `agentExclude`** — use `["*"]` to apply to every agent.
-
-```jsonc
-{
-  "linear": {
-    "type": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-linear"],
-    "env": { "LINEAR_API_KEY": "${env:LINEAR_API_KEY}" },
-    "agentInclude": ["*"]
-  },
-  "company-internal": {
-    "type": "http",
-    "url": "https://mcp.example.com",
-    "headers": { "Authorization": "Bearer ${env:COMPANY_TOKEN}" },
-    "agentExclude": ["codex"]
-  }
-}
-```
-
-The wrapper key (`mcpServers` for Claude/Cursor, `servers` for VSCode, `[mcp_servers.*]` TOML sections for Codex) is added by each agent's converter — you never write it by hand.
-
-#### Per-server agent filters (required)
-
-Every server definition broadcast through `.mcp/` **must** include one of these keys; servers with neither are dropped (with an error logged) so it's never ambiguous which agents a server applies to.
-
-| Key | Meaning |
-|-----|---------|
-| `"agentInclude": ["*"]` | Emit to every agent. Use this for the common case. |
-| `"agentInclude": ["claude", "cursor"]` | Emit only to the listed agents. |
-| `"agentExclude": ["*"]` | Skip every agent (effectively a disabled server). |
-| `"agentExclude": ["codex"]` | Emit to every agent except the listed ones. |
-
-Rules:
-
-- **Required**: every server must declare one of `agentInclude` or `agentExclude`. A server with neither is logged as an error and dropped from every output.
-- **Mutually exclusive**: specifying both keys on the same server is an error and drops the server.
-- **Wildcard**: `"*"` inside either array means "every agent". `agentInclude:["*"]` == always emit; `agentExclude:["*"]` == never emit.
-- **Stripped on output**: these keys are extension metadata — they're removed from the emitted config so the agent doesn't see them.
-
-Recognized agent names: `cursor`, `claude`, `vscode`, `codex`, plus `copilot` as an alias for the `vscode` target (GitHub Copilot in VSCode reads the same `.vscode/mcp.json`, so a server visible to one is visible to both).
-
-#### Output destinations
-
-| Agent | Output file | Wrapper / format |
-|-------|-------------|------------------|
-| Cursor | `.cursor/mcp.json` | `{ "mcpServers": { ... } }` |
-| Claude | `<workspace_root>/.mcp.json` | `{ "mcpServers": { ... } }` |
-| VSCode (& Copilot) | `.vscode/mcp.json` | `{ "servers": { ... } }` |
-| Codex | `.codex/config.toml` | `[mcp_servers.<name>]` TOML sections (other TOML keys preserved) |
-| [opencode](https://opencode.ai) | `<workspace_root>/opencode.json` | `{ "mcp": { ... } }` with full schema transform (see below); other keys preserved |
-
-#### Per-workspace opt-in: `.mcp/wcp-config.json`
-
-The broadcast only writes to agents listed in `.mcp/wcp-config.json`. Schema:
-
-```json
-{ "agents": ["claude", "cursor", "vscode", "codex", "opencode"] }
-```
-
-If the file is missing on first run, the extension auto-generates one based on which agent artifacts it detects in your workspace (`.cursor/`, `.claude/`, `.codex/`, `opencode.json`, etc.). Edit it afterwards to opt agents in or out — the file is never overwritten once it exists.
-
-Per-server `agentInclude` / `agentExclude` still work and narrow further: a server with `agentInclude: ["claude"]` only ever goes to Claude regardless of what wcp-config.json says.
-
-A target is only written if its config directory or marker file exists in the workspace (e.g. `.cursor/` for Cursor; `.opencode/` *or* `opencode.json` for opencode). Codex's `config.toml` and opencode's `opencode.json` are both **section-merged** — non-MCP keys like Codex's `model` / `approval_policy` and opencode's `tools` / `agent` / `tui` survive untouched.
-
-##### opencode schema transform
-
-Opencode's MCP schema differs notably from the standard. The converter remaps each canonical server entry:
-
-| Canonical | opencode | Notes |
-|-----------|----------|-------|
-| `type: "stdio"` | `type: "local"` | Implicit for entries without `type` but with `command`. |
-| `type: "http"` / `"sse"` | `type: "remote"` | |
-| `command` (string) + `args` (array) | `command` (array) | Joined as `[command, ...args]`. |
-| `env` (object) | `environment` (object) | Renamed key. |
-| `url` (string) | `url` (string) | Pass-through for `remote`. |
-| `headers` (object) | `headers` (object) | Pass-through for `remote`. |
-| `timeout` (number) | `timeout` (number) | Pass-through. |
-| (extension default) | `enabled: true` | Always set; users can override per-server in their existing `opencode.json` if needed (re-broadcast preserves only the `mcp` key, so manual overrides under `mcp.<name>.enabled` are *not* preserved — set it on the canonical server's `agentInclude`/`agentExclude` instead). |
-
-You can opt out of any target via the `workspaceConfigPlus.mcp.broadcast.targets` setting (default: all four).
-
-#### Per-tool overlays
-
-The existing per-tool config files (`.cursor/mcp.shared.json`, `.claude/mcp.shared.json`, etc.) still work — they're treated as **overlays on top of the canonical `.mcp/` content** for that tool only. Tool-specific overlay wins on name collision. Unwrapping is lenient: the extension reads either `{ "mcpServers": { ... } }` or the flat form.
-
-When `.mcp/` exists, the broadcast pipeline owns every per-tool MCP output and supersedes the previous per-tool merge behavior. When `.mcp/` is absent, per-tool merging works exactly as before.
-
-#### Codex caveats
-
-- Output goes to `.codex/config.toml` at the workspace root. Project-scoped config requires a recent Codex CLI version that reads project-level `.codex/`. The extension does **not** write `~/.codex/config.toml` (the user-level Codex config) — that's intentional.
-- HTTP/SSE server schemas in Codex TOML are less standardized than stdio. The converter writes canonical fields verbatim; stdio is the well-supported case.
-
-#### Migration from the legacy per-tool layout
-
-If you already have `.cursor/mcp.shared.json`, `.vscode/mcp.shared.json`, `.claude/mcp.shared.json`, or `.codex/mcp.shared.json` (with or without `mcp.local.json` and `mcp.generator.*.*.js` siblings), the extension will offer a one-time migration dialog when it activates and `.mcp/` doesn't yet exist.
-
-The dialog has three steps:
-
-1. **Convert?** — `Migrate all`, `Choose services…`, `Don't ask again`, or `Dismiss`. "Choose services…" opens a multi-select listing each detected tool; everything is pre-checked.
-2. **Generator handling, per tool** — for each tool that has `mcp.generator.*.*.js` files, you choose:
-   - `Move to .mcp/` — copies the script to `.mcp/<name>.<priority>.js`. Its output runs through the lenient unwrap and gets `agentInclude: ["*"]` injected, so it broadcasts to every agent.
-   - `Keep tool-specific` — leaves the script in place. The overlay path auto-stamps the tool's `agentNames` so it stays scoped.
-   - `Skip` — touches nothing for this tool's generators.
-3. **Original files** — `Leave originals in place` (recommended), `Rename to .bak`, `Delete originals`, or `Cancel migration`.
-
-Migration produces:
-- `.mcp/team.json` from each tool's `mcp.shared.json` (servers stamped with `agentInclude: [<sourceTool>]` to preserve the original scope).
-- `.mcp/local.json` from each tool's `mcp.local.json` (same stamping).
-- Optional copied generators in `.mcp/<name>.<priority>.js`.
-
-After migration, both `.mcp/team.json` and `.mcp/local.json` go through the same gitignore-warning flow as every other file the extension writes.
-
-##### Lenient input format
-
-In `.mcp/*.json` files and in any generator's stdout, you can author either the canonical flat shape or a wrapped shape — `{ mcpServers: { ... } }`, `{ servers: { ... } }`, or `{ mcp_servers: { ... } }` are all auto-unwrapped to the same flat representation before merging. This lets you move legacy wrapped files into `.mcp/` without rewriting them.
-
-### CLI (`wcp`)
-
-The same broadcast/migration logic ships as a single-file Node CLI for use outside of VSCode/Cursor — terminals, scripts, hooks, and CI. Build once, copy anywhere.
-
-#### Build
-
-```bash
-npm install
-npm run build:cli      # writes dist/wcp.js (~320 KiB single file with shebang)
-cp dist/wcp.js ~/.local/bin/wcp
-```
-
-Requires Node 18+ on the target machine.
-
-#### Commands
-
-```text
-wcp run [--target <agent>] [--root <path>] [--silent]
-    Run the .mcp/ broadcast once. Writes only the named target's output file
-    when --target is set; otherwise broadcasts to every detected agent.
-    Hooks/wrappers should always set --target and --silent.
-
-wcp wrap <agent> -- <agent args>
-    Wrapper trampoline for codex / gemini. Runs a scoped broadcast for the
-    given agent, then execs the real agent binary with the remaining args.
-    Skips any binary whose realpath matches the wcp wrapper itself.
-
-wcp migrate [--root <path>]
-    Interactive migration from legacy per-tool MCP files into .mcp/.
-    Three steps: which services -> generator handling -> original-file
-    disposition. Requires a TTY.
-```
-
-#### Per-agent integration
-
-| Agent | Reload mechanism | Recommended setup |
-|-------|------------------|-------------------|
-| **Claude Code** | Reads config at session bootstrap | `alias claude='wcp wrap claude --'` (recommended). The `SessionStart` hook below is a useful fallback for non-aliased launches but does NOT refresh the *current* session — Claude loads MCP before the hook completes. |
-| **Cursor** | Auto-reload on file change | The VSCode extension covers this. CLI is the manual fallback. |
-| **VSCode** | Auto-reload on file change | Same — extension is the primary path. |
-| **Codex CLI** | Reads config at startup | `alias codex='wcp wrap codex --'` |
-| **Gemini CLI** | Reads config at startup | `alias gemini='wcp wrap gemini --'` |
-| GitHub Copilot CLI | Global `~/.copilot/mcp-config.json` | Out of scope — manage manually. |
-
-##### Claude wrapper alias (recommended)
-
-```bash
-# In ~/.bashrc or ~/.zshrc:
-alias claude='wcp wrap claude --'
-```
-
-`wcp wrap claude` runs a scoped broadcast (`--target claude`) before exec'ing the real `claude` binary, so the current session sees an up-to-date `<root>/.mcp.json`. The `--` lets Claude flags pass through unambiguously.
-
-##### Claude SessionStart hook (fallback)
-
-```jsonc
-// .claude/settings.json (or .claude/settings.local.json)
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "*",
-        "hooks": [
-          { "type": "command", "command": "wcp run --target claude --silent" }
-        ]
-      }
-    ]
-  }
-}
-```
-
-This refreshes `<root>/.mcp.json` for the **next** session. Claude reads MCP servers during session bootstrap *before* the `SessionStart` hook completes, so the hook's write doesn't apply to the current session. Use the wrapper alias above if you need current-session freshness; the hook is a fallback for launches that bypass the alias (CI, scripts, IDE buttons).
-
-##### Codex/Gemini wrapper aliases
-
-```bash
-# In ~/.bashrc or ~/.zshrc:
-alias codex='wcp wrap codex --'
-alias gemini='wcp wrap gemini --'
-```
-
-The trailing `--` lets agent flags pass through unambiguously. `wcp wrap codex` runs a scoped broadcast for Codex (only `.codex/config.toml` is written), then `exec`s the real `codex` binary with the user's original args.
-
-#### Why scope to a single agent
-
-When invoked from Claude's `SessionStart` hook, the only file Claude needs is `<root>/.mcp.json`. Writing `.codex/config.toml`, `.cursor/mcp.json`, and `.vscode/mcp.json` at that moment is wasted work and a chance to thrash other agents' configs while they're not running. `--target <agent>` scopes the broadcast pipeline to a single converter and exits fast.
-
-The "broadcast to everything" mode is still available without `--target` for explicit manual invocations from a shell or CI.
-
 ### Limitations
 
 All configuration setting values are ultimately stored and persisted in the native workspace configuration files (e.g. `.vscode/settings.json`, `.cursor/mcp.json`). However, because these features are added via an extension there are some associated limitations and accordingly we'd strongly advise against manually modifying those native files when using the extension, and instead advise managing your configuration in the shared/local files.
@@ -408,6 +182,242 @@ There are some longstanding requests from the VS Code community ([microsoft/vsco
 [vscode-github-issue-40233]: https://github.com/microsoft/vscode/issues/40233
 [vscode-github-issue-37519]: https://github.com/microsoft/vscode/issues/37519
 [vscode-github-issue-15909]: https://github.com/microsoft/vscode/issues/15909
+
+## MCP Broadcast
+
+Drop a single canonical MCP server definition into `.mcp/` and Workspace Config+ broadcasts it to every AI agent's expected config file with per-agent format conversion. One source of truth, every surface stays in sync.
+
+Supported targets: **Cursor** (`.cursor/mcp.json`), **Claude** (`<root>/.mcp.json`), **VSCode/Copilot** (`.vscode/mcp.json`), **Codex** (`.codex/config.toml`), and **[opencode](https://opencode.ai)** (`<root>/opencode.json`). The extension watches `.mcp/` and refreshes outputs on every change. The CLI (`wcp`) provides the same logic for terminal and hook usage.
+
+### Quick start
+
+1. Create `.mcp/team.json` at your workspace root:
+   ```json
+   {
+     "linear": {
+       "type": "stdio",
+       "command": "npx",
+       "args": ["-y", "@modelcontextprotocol/server-linear"],
+       "env": { "LINEAR_API_KEY": "${env:LINEAR_API_KEY}" }
+     }
+   }
+   ```
+2. Open the workspace in VSCode/Cursor (extension auto-broadcasts), **or** run `wcp run` from your terminal.
+3. The first run auto-generates `.mcp/wcp-config.json` listing the agents detected in your workspace. Edit it later to opt agents in or out.
+4. For Claude / Codex / Gemini, add a wrapper alias to your shell rc — see [Per-agent integration](#per-agent-integration) below.
+
+### `.mcp/` directory layout
+
+The extension only looks at files **directly inside `.mcp/`** (non-recursive). Subdirectories are ignored — put helper modules used by your generators inside `.mcp/lib/` or any subfolder.
+
+| Pattern | Role |
+|---------|------|
+| `*.json` (top-level) | **Definition file** — flat map of `serverName → serverDef`. Multiple files allowed (e.g. `team.json`, `infra.json`). Merged in alphabetical filename order. |
+| `local.json` (top-level) | **Personal override** — pinned to merge last so it always wins over other definition files. Conventionally gitignored. |
+| `<name>.<priority>.js` (top-level) | **Generator** — Node script that prints canonical-shape JSON to stdout. Runs after JSON definitions in priority order (lower priority first; later overrides earlier). |
+| `*.js` without `<priority>` segment | Ignored — usable as `require()` targets from generators. |
+| `wcp-config.json` | Reserved — see [Per-workspace opt-in](#per-workspace-opt-in-mcpwcp-configjson). NOT treated as a definition file. |
+
+### Canonical format
+
+Author each server as a flat entry keyed by name:
+
+```jsonc
+{
+  "linear": {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-linear"],
+    "env": { "LINEAR_API_KEY": "${env:LINEAR_API_KEY}" }
+  },
+  "company-internal": {
+    "type": "http",
+    "url": "https://mcp.example.com",
+    "headers": { "Authorization": "Bearer ${env:COMPANY_TOKEN}" }
+  }
+}
+```
+
+The wrapper key (`mcpServers` for Claude/Cursor, `servers` for VSCode, `mcp_servers` TOML sections for Codex, `mcp` for opencode) is added by each agent's converter at write time — you never write it by hand.
+
+**Lenient input format**: `.mcp/*.json` files and generator output may use either the flat form above or a wrapped shape (`{ "mcpServers": { ... } }`, `{ "servers": { ... } }`, `{ "mcp_servers": { ... } }`). The extension auto-unwraps. Lets you drop a legacy generator script into `.mcp/` without rewriting it.
+
+### Per-server agent filters (optional)
+
+Two optional metadata keys on each server entry control which agents receive that server:
+
+| Key | Meaning |
+|-----|---------|
+| `"agentInclude": ["*"]` | Emit to every agent (matches the no-target default — see below). |
+| `"agentInclude": ["claude", "cursor"]` | Emit only to the listed agents. |
+| `"agentExclude": ["codex"]` | Emit to every agent except the listed ones. |
+| `"agentExclude": ["*"]` | Skip every agent (effectively disabled). |
+
+**Defaults when filter is omitted** (contextual — based on how the broadcast was launched):
+
+- **Launched with `--target X`** (from a `wcp wrap claude` wrapper, a SessionStart hook, etc.): the server defaults to `agentInclude: [<X's agentNames>]`. Only the launching agent sees it. Matches "I'm running for claude right now, so unfiltered servers should go to claude."
+- **Launched without `--target`** (manual `wcp run` or extension full-refresh): the server defaults to `agentInclude: ["*"]`. Broadcast everywhere.
+
+Rules:
+
+- **Mutually exclusive**: specifying both `agentInclude` and `agentExclude` on the same server logs an error and drops that server from every output.
+- **Stripped on output**: agent-filter keys are extension metadata; they're removed from the emitted config so the agent never sees them.
+
+Recognized agent names: `cursor`, `claude`, `vscode`, `codex`, `opencode`, plus `copilot` as an alias for the `vscode` target (Copilot in VSCode reads the same `.vscode/mcp.json`, so a server visible to one is visible to both).
+
+### Per-workspace opt-in: `.mcp/wcp-config.json`
+
+The broadcast only writes to agents listed in `.mcp/wcp-config.json`:
+
+```json
+{ "agents": ["claude", "cursor", "vscode", "codex", "opencode"] }
+```
+
+If the file is missing on first run, the extension auto-generates it from detected artifacts (`.cursor/`, `.claude/`, `.vscode/`, `.codex/`, `opencode.json`, `.opencode/`). Edit the generated file to opt agents in or out — it's never overwritten once it exists.
+
+This is the workspace-level opt-in. Per-server `agentInclude` / `agentExclude` filters narrow further on top of this list. A server with `agentInclude: ["claude"]` only ever goes to Claude regardless of what `wcp-config.json` says.
+
+### Output destinations
+
+| Agent | Output file | Format |
+|-------|-------------|--------|
+| Cursor | `.cursor/mcp.json` | `{ "mcpServers": { ... } }` |
+| Claude | `<workspace_root>/.mcp.json` | `{ "mcpServers": { ... } }` |
+| VSCode (& Copilot) | `.vscode/mcp.json` | `{ "servers": { ... } }` |
+| Codex | `.codex/config.toml` | `[mcp_servers.<name>]` TOML; non-MCP keys preserved |
+| opencode | `<workspace_root>/opencode.json` | `{ "mcp": { ... } }` with full schema transform; non-MCP keys preserved |
+
+Codex's `config.toml` and opencode's `opencode.json` are **section-merged**: the extension reads the existing file, replaces only the MCP section, and writes back, preserving keys like Codex's `model` and opencode's `tools` / `agent` / `tui`.
+
+#### opencode schema transform
+
+Opencode's MCP schema differs from the standard. The converter remaps each canonical entry:
+
+| Canonical | opencode |
+|-----------|----------|
+| `type: "stdio"` | `type: "local"` |
+| `type: "http"` / `"sse"` | `type: "remote"` |
+| `command` (string) + `args` (array) | `command` (array) — joined as `[command, ...args]` |
+| `env` (object) | `environment` (object) |
+| `url` / `headers` / `timeout` | Pass-through |
+| (extension default) | `enabled: true` |
+
+### Per-tool overlays (advanced)
+
+Per-tool config files (`.cursor/mcp.shared.json`, `.claude/mcp.shared.json`, `.vscode/mcp.shared.json`, `.codex/mcp.shared.json` plus their `.local.json` and `mcp.generator.*.*.js` siblings) still work — they're treated as **overlays on top of the canonical `.mcp/` content** for that tool only. Tool-specific overlay wins on name collision. Servers in an overlay file inherit the tool's scope automatically — you don't need to add `agentInclude` to overlay servers.
+
+When `.mcp/` exists, the broadcast pipeline owns every per-tool MCP output. When `.mcp/` is absent, the per-tool merge runs as it did before this feature.
+
+### Migration from legacy per-tool layout
+
+If your repo already has `.cursor/mcp.shared.json`, `.claude/mcp.shared.json`, etc. but no `.mcp/`, the extension offers a one-time migration dialog on activation. The CLI exposes the same flow as `wcp migrate`.
+
+The dialog has three steps:
+
+1. **Convert?** — `Migrate all`, `Choose services…`, `Don't ask again`, or `Dismiss`.
+2. **Generator handling, per tool** — `Move to .mcp/` (broadcasts to all agents), `Keep tool-specific` (stays scoped to that tool), or `Skip`.
+3. **Original files** — `Leave originals in place` (recommended), `Rename to .bak`, `Delete originals`, or `Cancel migration`.
+
+Migration produces:
+
+- `.mcp/team.json` from each tool's `mcp.shared.json` (servers stamped with `agentInclude: [<sourceTool>]` to preserve original scope)
+- `.mcp/local.json` from each tool's `mcp.local.json` (same stamping)
+- Optional copied generators in `.mcp/<name>.<priority>.js`
+
+### Codex caveats
+
+- Output goes to `.codex/config.toml` at the workspace root. Project-scoped Codex config requires a recent Codex CLI version that reads project-level `.codex/`. The extension does **not** write `~/.codex/config.toml` (the user-level Codex config) — that's intentional.
+- HTTP/SSE server schemas in Codex TOML are less standardized than stdio. The converter writes canonical fields verbatim; stdio is the well-supported case.
+
+### CLI (`wcp`)
+
+The same broadcast and migration logic ships as a single-file Node CLI for use outside of VSCode/Cursor — terminals, scripts, hooks, and CI.
+
+#### Build & install
+
+```bash
+npm install
+npm run build:cli                    # writes dist/wcp.js (~330 KiB single file with shebang)
+cp dist/wcp.js ~/.local/bin/wcp      # or wherever your shell looks
+```
+
+Requires Node 18+ on the target machine.
+
+#### Commands
+
+```text
+wcp run [--target <agent>] [--root <path>] [--silent]
+    Run the .mcp/ broadcast once. With --target, only that agent's output
+    file is written; otherwise broadcasts to every detected agent.
+    Hooks/wrappers always set --target and --silent.
+    With --silent, missing .mcp/ exits 0 silently (hook-friendly).
+
+wcp wrap <agent> -- <agent args>
+    Wrapper trampoline for claude / codex / gemini. Runs a scoped broadcast
+    for the given agent, then execs the real agent binary with the
+    remaining args. Skips any binary whose realpath matches the wrapper
+    itself.
+
+wcp migrate [--root <path>]
+    Interactive migration from legacy per-tool MCP files into .mcp/.
+    Three steps: which services -> generator handling -> original-file
+    disposition. Requires a TTY.
+```
+
+### Per-agent integration
+
+| Agent | Recommended setup |
+|-------|-------------------|
+| **Claude Code** | `alias claude='wcp wrap claude --'`. Claude reads MCP at session bootstrap *before* any hook fires, so the wrapper is the only way to refresh `.mcp.json` for the **current** session. |
+| **Cursor** | The VSCode extension covers this. CLI is the manual fallback. |
+| **VSCode** | Same — extension is the primary path. |
+| **Codex CLI** | `alias codex='wcp wrap codex --'` |
+| **Gemini CLI** | `alias gemini='wcp wrap gemini --'` |
+| **opencode** | The extension covers this when running in your editor. CLI: run `wcp run` manually as needed (opencode reloads its config on file change). |
+| GitHub Copilot CLI | Out of scope — `~/.copilot/mcp-config.json` is global; manage manually. |
+
+#### Claude wrapper alias (recommended)
+
+```bash
+# In ~/.bashrc or ~/.zshrc:
+alias claude='wcp wrap claude --'
+```
+
+`wcp wrap claude` runs `wcp run --target claude --silent` (writes only `<root>/.mcp.json`), then `exec`s the real `claude` binary with the user's original args. The trailing `--` tells the wcp argv parser to stop interpreting flags so Claude's own `--`-flags pass through unambiguously.
+
+#### Claude SessionStart hook (fallback)
+
+```jsonc
+// ~/.claude/settings.json (or .claude/settings.local.json per-project)
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "wcp run --target claude --silent" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The hook refreshes `<root>/.mcp.json` for the **next** session. Claude reads MCP servers during session bootstrap *before* `SessionStart` hooks complete, so the hook does NOT apply to the current session. Use the wrapper alias above if you need current-session freshness; the hook is a fallback for launches that bypass the alias (CI, scripts, IDE buttons).
+
+#### Codex / Gemini wrapper aliases
+
+```bash
+# In ~/.bashrc or ~/.zshrc:
+alias codex='wcp wrap codex --'
+alias gemini='wcp wrap gemini --'
+```
+
+#### Why scope to a single agent
+
+When invoked from a hook or wrapper, the only file the launching agent needs is its own. Writing the other four outputs at that moment is wasted work and a chance to thrash other agents' configs while they're not running. `--target <agent>` scopes the broadcast pipeline to one converter and exits fast.
+
+The "broadcast to everything" mode is still available without `--target` for explicit manual invocations from a shell or CI.
 
 ## Feedback
 
